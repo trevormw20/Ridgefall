@@ -94,7 +94,7 @@ function loadBattle(n){
   b.foes.forEach((f,i)=>{ const t=FOE[f]; const s=FSTART[i]||[i,0];
     units.push(U(Object.assign({},t,{id:'e'+i,foe:true,x:s[0],y:s[1]}))); });
   lanterns=[]; lanternTiles=new Set(); fireExtra=new Set(); projectiles=[]; pops=[];
-  order=[]; oi=-1; round=0; active=null; mode='idle'; busy=false; selSkill=null; moveUndo=null;
+  order=[]; oi=-1; round=0; active=null; mode='idle'; busy=false; selSkill=null; moveUndo=null; pendingCast=null; hiAoe=new Set();
   document.getElementById('overlay').classList.remove('show');
   buildOrder(); nextTurn();
 }
@@ -133,7 +133,7 @@ const SK={
  'Pinning Shot':{type:'ranged',power:3,range:5,minr:2,acc:75,desc:'Shot that applies Hampered (MOVE -1).',status:'Hampered'},
  'Overwatch':{type:'self',range:0,acc:0,desc:'Stance: shoot the first enemy that enters your range this round.',selfstatus:'Overwatch'},
  // Ember Cantor
- 'Fire Spark':{type:'magic',power:5,range:4,acc:85,desc:'Simple fire magic damage.'},
+ 'Fire Spark':{type:'magic',power:5,range:4,acc:85,aoe:'plus',desc:'Fire magic. Bursts in a + (center and the tiles up/down/left/right), hitting every enemy caught.'},
  'Ember Tile':{type:'zonefire',range:4,acc:0,desc:'Create a Fire Tile (2 rounds). Burns anyone standing on it.'},
  'Smoke Chant':{type:'zonesmoke',range:4,acc:0,desc:'Create smoke (radius 1): ranged hit -20% through it.'},
  'Kindling':{type:'magic',power:3,range:4,acc:80,desc:'Fire damage; applies/refreshes Burn.',status:'Burn'},
@@ -232,7 +232,7 @@ function quickstepMove(def,att){
 
 // ================= game state =================
 let order=[], oi=-1, active=null, round=1, mode='idle', busy=false;
-let hiMove=new Set(), hiTarget=new Set(), selSkill=null;
+let hiMove=new Set(), hiTarget=new Set(), hiAoe=new Set(), selSkill=null, pendingCast=null;
 let projectiles=[], pops=[], shakeT=0, shakeMag=0, hoverTile=null;
 let lanternTiles=new Set(), fireExtra=new Set();
 let lanterns=[]; // {x,y,radius,life} — area light with strongest effect on center square
@@ -309,9 +309,15 @@ function renderActions(){
     mk('‹ Back',()=>{mode='idle';infoEl.innerHTML=actionPrompt();renderActions();},'ghost');
     return;
   }
+  if(mode==='confirm'){
+    // previewing where the skill will land — commit or step back to re-aim
+    mk('✓ Confirm',doConfirmedCast,'hot');
+    mk('‹ Back',cancelConfirm,'ghost');
+    return;
+  }
   if(mode==='target' && selSkill && selSkill!=='__basic'){
     // targeting a command skill: show Back so the player can cancel after reading the tooltip
-    mk('‹ Back',()=>{selSkill=null;hiTarget=new Set();mode='skillmenu';infoEl.innerHTML='<b>Skills</b> — choose a command.';renderActions();},'ghost');
+    mk('‹ Back',()=>{selSkill=null;hiTarget=new Set();hiAoe=new Set();pendingCast=null;mode='skillmenu';infoEl.innerHTML='<b>Skills</b> — choose a command.';renderActions();},'ghost');
     mk('Wait',endUnitTurn,'hot');
     return;
   }
@@ -340,11 +346,11 @@ function pickSkill(name){
   renderActions();
 }
 function enterMove(){
-  if(active._moved||busy)return; mode='move'; hiTarget.clear(); hiMove=new Set();
+  if(active._moved||busy)return; mode='move'; hiTarget.clear(); hiAoe=new Set(); pendingCast=null; hiMove=new Set();
   reachable(active).forEach(m=>hiMove.add(m.x+','+m.y));
   infoEl.innerHTML=`<b>Move</b> — tap a blue tile (range ${active.MOVE}).`; renderActions();
 }
-function enterTarget(){ mode='target'; buildTargets('__basic'); 
+function enterTarget(){ mode='target'; hiAoe=new Set(); pendingCast=null; buildTargets('__basic');
   const n=[...hiTarget].filter(k=>{const[x,y]=k.split(',').map(Number);const e=uAt(x,y);return e&&e.foe;}).length;
   infoEl.innerHTML=`<b>Attack</b> — tap an enemy in range${n?` (${n})`:' — none in range'}.`; renderActions();
 }
@@ -438,7 +444,56 @@ function handleSelect(sx,sy){
   if(busy||!active||active.foe)return;
   const t=scrToTile(sx,sy); if(!t)return; const k=t.x+','+t.y;
   if(mode==='move'&&hiMove.has(k)){ doMove(active,t.x,t.y); return;}
-  if(mode==='target'&&hiTarget.has(k)){ resolveTargeted(t.x,t.y); return; }
+  if(mode==='confirm'){
+    // tapping inside the previewed footprint (or its center) fires; tapping another valid spot re-aims
+    if(pendingCast && (k===pendingCast.x+','+pendingCast.y || hiAoe.has(k))){ doConfirmedCast(); return; }
+    if(hiTarget.has(k)){ enterConfirm(t.x,t.y); return; }
+    return;
+  }
+  if(mode==='target'&&hiTarget.has(k)){
+    // command skills get a preview+confirm step; basic attacks and self stances cast straight away
+    if(selSkill && selSkill!=='__basic' && SK[selSkill] && SK[selSkill].type!=='self'){ enterConfirm(t.x,t.y); return; }
+    resolveTargeted(t.x,t.y); return;
+  }
+}
+// ---- preview + confirm: show exactly which tiles/units a skill will affect ----
+function affectedTiles(name,cx,cy){
+  const sk=SK[name]||{}; const out=[];
+  const push=(x,y)=>{ if(inB(x,y)&&!tt(x,y).blocked) out.push({x,y}); };
+  const plus=()=>[[0,0],[1,0],[-1,0],[0,1],[0,-1]].forEach(([dx,dy])=>push(cx+dx,cy+dy));
+  const disc=r=>{ for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++) if(Math.abs(dx)+Math.abs(dy)<=r) push(cx+dx,cy+dy); };
+  if(sk.aoe==='plus') plus();
+  else if(name==='Place Lantern'||name==='Reveal') disc(2);   // radius-2 light / reveal area
+  else if(name==='Smoke Chant') plus();                       // + shaped smoke
+  else push(cx,cy);                                           // single tile / single unit
+  return out;
+}
+function confirmInfo(name,cx,cy){
+  const sk=SK[name]; const tiles=affectedTiles(name,cx,cy);
+  const foes=[],allies=[];
+  tiles.forEach(t=>{const u=uAt(t.x,t.y); if(u&&u.hp>0)(u.foe?foes:allies).push(u.name.split(' ')[0]);});
+  if(sk.aoe) return foes.length?`will hit ${foes.length} ${foes.length>1?'enemies':'enemy'} — ${foes.join(', ')}`:'catches no one (empty area)';
+  if(sk.type==='heal'||sk.type==='buff'||sk.type==='support') return allies.length?`on ${allies[0]}`:'no ally on that tile';
+  if(sk.type==='drag') return allies.length?`pull ${allies[0]}`:'no ally to pull';
+  if(sk.type==='zone'||sk.type==='zonefire'||sk.type==='zonesmoke'||sk.type==='reveal') return 'placed on the highlighted tiles';
+  return foes.length?`on ${foes[0]}`:'no enemy on that tile';
+}
+function enterConfirm(x,y){
+  mode='confirm'; pendingCast={x,y};
+  hiAoe=new Set(affectedTiles(selSkill,x,y).map(t=>t.x+','+t.y));
+  infoEl.innerHTML=`<b>${selSkill}</b> — ${confirmInfo(selSkill,x,y)}. <b>Tap Confirm</b> (or tap the target again). ‹ Back to re-aim.`;
+  renderActions();
+}
+function cancelConfirm(){
+  pendingCast=null; hiAoe=new Set(); mode='target'; buildTargets(selSkill);
+  const sk=SK[selSkill];
+  infoEl.innerHTML=`<b>${selSkill}</b> — ${sk?sk.desc:''} Tap a highlighted tile to aim.`;
+  renderActions();
+}
+function doConfirmedCast(){
+  if(!pendingCast)return; const {x,y}=pendingCast;
+  pendingCast=null; hiAoe=new Set();
+  resolveTargeted(x,y);
 }
 // zoom buttons + reset (wired from HTML)
 window.zoomIn =()=>{zoomAt(VW/2,VH/2,1.2);};
@@ -471,6 +526,8 @@ function resolveTargeted(x,y){
   } else { sk=Object.assign({name:selSkill}, SK[selSkill]); }
   // self-type stance skills: confirm by tapping the caster
   if(sk.type==='self'){ if(isSelfTile) castSelf(active,selSkill); else fizzle(); return; }
+  // area skills (e.g. Fire Spark +): resolve against every tile in the footprint
+  if(sk.aoe){ castAoe(active,x,y,sk); return; }
   const tgt=uAt(x,y);
   if(sk.type==='heal'){
     const ally = isSelfTile ? active : tgt;
@@ -690,6 +747,33 @@ function finishAtk(att,def,sk){
     else afterAct(att);
   }, def.hp<=0?250:150);
 }
+// ================= area-of-effect attack (Fire Spark +) =================
+function castAoe(att,cx,cy,sk){
+  busy=true;mode='idle';hiTarget=new Set();hiAoe=new Set();actEl.innerHTML='';
+  att.face=cx>att.x?1:(cx<att.x?-1:att.face);
+  att.anim='attack';att.aframe=0;
+  const tiles=affectedTiles(sk.name,cx,cy);
+  const total=340,t0=performance.now();let fired=false;
+  (function fr(now){const k=(now-t0)/total;att.aframe=Math.min(ANIM.attack.length-1,Math.floor(k*ANIM.attack.length));
+    if(!fired&&k>=0.55){fired=true;
+      const a=iso(att.px,att.py,tt(att.x,att.y).high?HG_LIFT:0),b=iso(cx,cy,tt(cx,cy).high?HG_LIFT:0);
+      projectiles.push({x:a.x,y:a.y-16,tx:b.x,ty:b.y-16,t:0,kind:att.proj||'bolt',onHit:()=>resolveAoe(att,tiles,cx,cy,sk)});}
+    if(k<1)requestAnimationFrame(fr);else{att.anim='idle';att.aframe=0;}
+  })(t0);
+}
+function resolveAoe(att,tiles,cx,cy,sk){
+  shakeT=1;shakeMag=6;
+  pops.push({x:cx,y:cy,txt:'✸',c:'#ff9a4a',t:0,lift:tt(cx,cy).high?HG_LIFT:0});
+  let anyFoe=false;
+  for(const t of tiles){const d=uAt(t.x,t.y); if(d&&d.foe&&d.hp>0){anyFoe=true; landHit(att,d,sk);}}
+  att._attacked=true;
+  setTimeout(()=>{
+    if(checkEnd()){busy=false;return;}
+    busy=false;
+    infoEl.innerHTML=anyFoe?`<b>${att.name}</b> unleashes ${sk.name}.`:`<b>${att.name}</b>'s ${sk.name} caught no one.`;
+    afterAct(att);
+  },260);
+}
 
 // ================= after a player action =================
 function afterAct(u){
@@ -730,11 +814,11 @@ function nextTurn(){
   }while(order[oi] && order[oi].hp<=0 && g<60);
   active=order[oi];
   if(!active){return;}
-  active._moved=false; active._attacked=false; active._sprint=false; mode='idle'; selSkill=null; moveUndo=null;
+  active._moved=false; active._attacked=false; active._sprint=false; mode='idle'; selSkill=null; moveUndo=null; pendingCast=null;
   // start-of-turn effects
   startOfTurn(active);
   if(active.hp<=0){ return nextTurn(); }
-  hiMove=new Set(); hiTarget=new Set();
+  hiMove=new Set(); hiTarget=new Set(); hiAoe=new Set();
   if(active.foe){ infoEl.innerHTML=`<b>${active.name}</b> (enemy) acts…`; actEl.innerHTML=''; setTimeout(enemyTurn,600); }
   else { infoEl.innerHTML=actionPrompt(); renderActions(); }
 }
@@ -827,6 +911,9 @@ function drawTile(x,y){
     ctx.fillStyle='rgba(230,230,240,.7)';ctx.font='11px Georgia';ctx.textAlign='center';ctx.fillText('≈',p.x,p.y+4);ctx.textAlign='left';}
   if(hiMove.has(k)){ctx.fillStyle='rgba(90,170,255,.4)';dia(p,hx,hy);ctx.strokeStyle='rgba(150,210,255,.9)';ctx.lineWidth=1;diaStroke(p,hx,hy);}
   if(hiTarget.has(k)){const e=uAt(x,y);const strong=e&&e.foe;ctx.fillStyle=strong?'rgba(255,70,50,.5)':'rgba(255,100,80,.22)';dia(p,hx,hy);}
+  if(hiAoe.has(k)){ctx.fillStyle='rgba(255,150,60,.42)';dia(p,hx,hy);
+    const isCtr=pendingCast&&pendingCast.x===x&&pendingCast.y===y;
+    ctx.strokeStyle=isCtr?'rgba(255,235,150,.98)':'rgba(255,200,110,.85)';ctx.lineWidth=isCtr?2.5:1.5;diaStroke(p,hx,hy);}
   if(hoverTile&&hoverTile.x===x&&hoverTile.y===y&&(mode==='move'||mode==='target')){ctx.strokeStyle='rgba(255,255,255,.9)';ctx.lineWidth=1.5;diaStroke(p,hx,hy);}
 }
 function dia(p,hx,hy){ctx.beginPath();ctx.moveTo(p.x,p.y-hy);ctx.lineTo(p.x+hx,p.y);ctx.lineTo(p.x,p.y+hy);ctx.lineTo(p.x-hx,p.y);ctx.closePath();ctx.fill();}
