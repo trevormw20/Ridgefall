@@ -1,0 +1,59 @@
+name: Deploy Ridgefall to GitHub Pages
+
+# Builds the single-file game from src/ and publishes it so the latest
+# playable version is always live at https://trevormw20.github.io/Ridgefall/
+on:
+  push:
+    branches: [claude/ffta-inspired-game-design-hbuqhv]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one Pages deploy at a time; newer pushes cancel in-flight ones.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build single-file game (src/ -> dist/)
+        run: |
+          cd tools
+          python3 build.py
+
+      - name: Assemble Pages site
+        run: |
+          mkdir -p _site
+          # Serve the built game directly at the site root.
+          cp dist/ridgefall_v0_1.html _site/index.html
+          # Also keep the versioned filename available for direct links.
+          cp dist/ridgefall_v0_1.html _site/ridgefall_v0_1.html
+
+      - name: Configure Pages (auto-enable if needed)
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
