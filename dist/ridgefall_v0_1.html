@@ -179,7 +179,7 @@ const JOB={
  duelist:   {cid:'duelist',name:'Duelist',HP:34,ATK:10,MAG:2,DEF:4,RES:3,ACC:85,EVA:12,SPD:11,MOVE:4, skills:['Rival Mark','Quick Cut','Hamstring','Riposte Stance'], react:'parry'},
  lanternist:{cid:'lanternist',name:'Lanternist',HP:30,ATK:3,MAG:9,DEF:3,RES:6,ACC:80,EVA:8,SPD:9,MOVE:4, skills:['Warm Light','Place Lantern','Reveal','Guiding Glow'], react:'lightguard'},
  bowman:    {cid:'bowman',name:'Bowman',HP:28,ATK:8,MAG:2,DEF:3,RES:3,ACC:82,EVA:8,SPD:9,MOVE:4, skills:['Aimed Shot','High Shot','Pinning Shot','Overwatch'], react:'snap', proj:'arrow'},
- ember:     {cid:'ember',name:'Ember Cantor',HP:27,ATK:3,MAG:10,DEF:2,RES:5,ACC:80,EVA:6,SPD:8,MOVE:4, skills:['Fire Spark','Ember Tile','Smoke Chant','Kindling'], react:'cinder', proj:'bolt'},
+ ember:     {cid:'ember',name:'Ember Cantor',HP:27,ATK:3,MAG:10,DEF:2,RES:5,ACC:80,EVA:6,SPD:8,MOVE:4, skills:['Fire Spark','Blizzard','Ember Tile','Smoke Chant','Kindling'], react:'cinder', proj:'bolt'},
  courier:   {cid:'courier',name:'Courier',HP:31,ATK:6,MAG:3,DEF:3,RES:3,ACC:80,EVA:14,SPD:12,MOVE:5, skills:['Quick Item','Sprint','Drag Ally','Supply Toss'], react:'quickstep'},
 };
 const FOE={
@@ -245,6 +245,7 @@ const SK={
  'Overwatch':{type:'self',range:0,acc:0,desc:'Stance: shoot the first enemy that enters your range this round.',selfstatus:'Overwatch'},
  // Ember Cantor
  'Fire Spark':{type:'magic',power:5,range:4,acc:85,aoe:'plus',desc:'Fire magic. Bursts in a + (center and the tiles up/down/left/right), hitting every enemy caught.'},
+ 'Blizzard':{type:'magic',power:4,range:4,acc:85,aoe:'plus',status:'Hampered',proj:'ice',fx:{glyph:'❄',color:'#9fe6ff'},desc:'Ice magic. Bursts in a + (center and up/down/left/right), damaging every enemy caught and Slowing them (Hampered, MOVE -1).'},
  'Ember Tile':{type:'zonefire',range:4,acc:0,desc:'Create a Fire Tile (2 rounds). Burns anyone standing on it.'},
  'Smoke Chant':{type:'zonesmoke',range:4,acc:0,desc:'Create smoke (radius 1): ranged hit -20% through it.'},
  'Kindling':{type:'magic',power:3,range:4,acc:80,desc:'Fire damage; applies/refreshes Burn.',status:'Burn'},
@@ -868,13 +869,14 @@ function castAoe(att,cx,cy,sk){
   (function fr(now){const k=(now-t0)/total;att.aframe=Math.min(ANIM.attack.length-1,Math.floor(k*ANIM.attack.length));
     if(!fired&&k>=0.55){fired=true;
       const a=iso(att.px,att.py,tt(att.x,att.y).high?HG_LIFT:0),b=iso(cx,cy,tt(cx,cy).high?HG_LIFT:0);
-      projectiles.push({x:a.x,y:a.y-16,tx:b.x,ty:b.y-16,t:0,kind:att.proj||'bolt',onHit:()=>resolveAoe(att,tiles,cx,cy,sk)});}
+      projectiles.push({x:a.x,y:a.y-16,tx:b.x,ty:b.y-16,t:0,kind:sk.proj||att.proj||'bolt',onHit:()=>resolveAoe(att,tiles,cx,cy,sk)});}
     if(k<1)requestAnimationFrame(fr);else{att.anim='idle';att.aframe=0;}
   })(t0);
 }
 function resolveAoe(att,tiles,cx,cy,sk){
   shakeT=1;shakeMag=6;
-  pops.push({x:cx,y:cy,txt:'✸',c:'#ff9a4a',t:0,lift:tt(cx,cy).high?HG_LIFT:0});
+  const fx=sk.fx||{glyph:'✸',color:'#ff9a4a'};
+  pops.push({x:cx,y:cy,txt:fx.glyph,c:fx.color,t:0,lift:tt(cx,cy).high?HG_LIFT:0});
   let anyFoe=false;
   for(const t of tiles){const d=uAt(t.x,t.y); if(d&&d.foe&&d.hp>0){anyFoe=true; landHit(att,d,sk);}}
   att._attacked=true;
@@ -1056,11 +1058,12 @@ function drawUnit(u){
   if(u===active&&!u.foe){ctx.fillStyle='#e8c766';const ay=p.y+yOff-5+Math.sin(performance.now()/300)*2;
     ctx.beginPath();ctx.moveTo(p.x,ay);ctx.lineTo(p.x-4,ay-6);ctx.lineTo(p.x+4,ay-6);ctx.closePath();ctx.fill();}
 }
-function statusColor(s){return{Burn:'#ff7a3a',Slow:'#7ab0ff',Guarded:'#8fd0ff',Marked:'#ff5a5a',Exposed:'#ffb040',Rooted:'#b08050',Guided:'#e8c766',Riposte:'#d8d0a0',Intercept:'#8fd0ff'}[s]||'#fff';}
+function statusColor(s){return{Burn:'#ff7a3a',Slow:'#7ab0ff',Hampered:'#9fe6ff',Guarded:'#8fd0ff',Marked:'#ff5a5a',Exposed:'#ffb040',Rooted:'#b08050',Guided:'#e8c766',Riposte:'#d8d0a0',Intercept:'#8fd0ff'}[s]||'#fff';}
 
 function pop(u,txt,c){return{x:u.px,y:u.py,txt,c,t:0,lift:tt(u.x,u.y).high?HG_LIFT:0};}
 function drawProj(){for(const pr of projectiles){const x=pr.x+(pr.tx-pr.x)*pr.t,arc=Math.sin(pr.t*Math.PI)*18,y=pr.y+(pr.ty-pr.y)*pr.t-arc;
   if(pr.kind==='arrow'){ctx.strokeStyle='#e8d8a0';ctx.lineWidth=2;const a=Math.atan2(pr.ty-pr.y,pr.tx-pr.x);ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x-7*Math.cos(a),y-7*Math.sin(a));ctx.stroke();}
+  else if(pr.kind==='ice'){ctx.fillStyle='#d6f4ff';ctx.beginPath();ctx.arc(x,y,4,0,Math.PI*2);ctx.fill();ctx.fillStyle='rgba(150,220,255,.4)';ctx.beginPath();ctx.arc(x,y,7,0,Math.PI*2);ctx.fill();}
   else{ctx.fillStyle='#e08cf0';ctx.beginPath();ctx.arc(x,y,4,0,Math.PI*2);ctx.fill();ctx.fillStyle='rgba(224,140,240,.4)';ctx.beginPath();ctx.arc(x,y,7,0,Math.PI*2);ctx.fill();}}}
 function drawPops(){for(const q of pops){const p=iso(q.x,q.y,q.lift||0);ctx.font='bold 13px Georgia';ctx.textAlign='center';ctx.globalAlpha=Math.max(0,1-q.t);
   ctx.fillStyle='#000';ctx.fillText(q.txt,p.x+1,p.y-26-q.t*22+1);ctx.fillStyle=q.c;ctx.fillText(q.txt,p.x,p.y-26-q.t*22);ctx.globalAlpha=1;ctx.textAlign='left';}}
