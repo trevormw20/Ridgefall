@@ -76,6 +76,18 @@ const FOE={
  archer:{cid:'archer',name:'Archer',HP:22,ATK:6,MAG:0,DEF:2,RES:2,ACC:80,EVA:8,SPD:9,MOVE:4, skills:['Basic Shot','Pin Shot'], react:null, proj:'arrow'},
  spark: {cid:'spark',name:'Spark Caster',HP:20,ATK:2,MAG:8,DEF:2,RES:5,ACC:80,EVA:5,SPD:8,MOVE:3, skills:['Spark','Fire Tile'], react:null, proj:'bolt'},
 };
+// ---- Equipment (display-only flavor for the View Field inspector; no stat effects yet) ----
+const GEAR={
+ warder:    {Weapon:'Iron Mace',    Offhand:'Tower Shield',    Armor:'Warden Plate',    Trinket:'Oathbound Sigil'},
+ duelist:   {Weapon:'Dueling Saber',Offhand:'Parrying Dagger', Armor:'Studded Leather', Trinket:'Rival’s Token'},
+ lanternist:{Weapon:'Lantern Staff',Offhand:'Oil Flask',       Armor:'Pilgrim Robes',   Trinket:'Warm Charm'},
+ bowman:    {Weapon:'Yew Longbow',  Offhand:'Quiver',          Armor:'Ranger Jerkin',   Trinket:'Keen Eyepiece'},
+ ember:     {Weapon:'Cantor Rod',   Offhand:'Ember Focus',     Armor:'Ash-weave Robes', Trinket:'Cinder Bead'},
+ courier:   {Weapon:'Swift Dagger', Offhand:'Supply Satchel',  Armor:'Traveler Garb',   Trinket:'Fleetfoot Band'},
+ raider:    {Weapon:'Notched Axe',  Offhand:'Buckler',         Armor:'Hide Vest',       Trinket:'—'},
+ archer:    {Weapon:'Short Bow',    Offhand:'Quiver',          Armor:'Leather Vest',    Trinket:'—'},
+ spark:     {Weapon:'Spark Wand',   Offhand:'—',               Armor:'Woven Cloak',     Trinket:'Static Charm'},
+};
 const BATTLES={
  0:{players:['warder','duelist','lanternist'], foes:['raider']},
  1:{players:['warder','duelist','lanternist'], foes:['raider','raider','archer','spark']},
@@ -93,7 +105,7 @@ function loadBattle(n){
     units.push(U(Object.assign({},t,{id:'p'+i,foe:false,x:s[0],y:s[1]}))); });
   b.foes.forEach((f,i)=>{ const t=FOE[f]; const s=FSTART[i]||[i,0];
     units.push(U(Object.assign({},t,{id:'e'+i,foe:true,x:s[0],y:s[1]}))); });
-  lanterns=[]; lanternTiles=new Set(); fireExtra=new Set(); projectiles=[]; pops=[];
+  lanterns=[]; lanternTiles=new Set(); fireExtra=new Map(); projectiles=[]; pops=[];
   order=[]; oi=-1; round=0; active=null; mode='idle'; busy=false; selSkill=null; moveUndo=null; pendingCast=null; hiAoe=new Set();
   document.getElementById('overlay').classList.remove('show');
   buildOrder(); nextTurn();
@@ -214,7 +226,7 @@ function tryReaction(def,att,rawDmg,skill){
     if((skill.type==='melee'||skill.type==='ranged') && r<20){def.rp--; quickstepMove(def,att); return{dmg:Math.round(rawDmg*0.75),tag:'STEP'};}
   }else if(def.react==='cinder'){
     // Ember: 15% vs melee -> attacker's tile becomes fire (no immediate dmg)
-    if(skill.type==='melee' && r<15){def.rp--; if(!(tt(att.x,att.y).fire)) fireExtra.add(att.x+','+att.y); return{dmg:rawDmg,tag:'CINDER'};}
+    if(skill.type==='melee' && r<15){def.rp--; if(!(tt(att.x,att.y).fire)) addFire(att.x,att.y,1,def.foe); return{dmg:rawDmg,tag:'CINDER'};}
   }else if(def.react==='snap'){
     // Bowman: reactive shot handled on enemy movement, not here
   }
@@ -232,9 +244,9 @@ function quickstepMove(def,att){
 
 // ================= game state =================
 let order=[], oi=-1, active=null, round=1, mode='idle', busy=false;
-let hiMove=new Set(), hiTarget=new Set(), hiAoe=new Set(), selSkill=null, pendingCast=null;
+let hiMove=new Set(), hiTarget=new Set(), hiAoe=new Set(), selSkill=null, pendingCast=null, inspTarget=null;
 let projectiles=[], pops=[], shakeT=0, shakeMag=0, hoverTile=null;
-let lanternTiles=new Set(), fireExtra=new Set();
+let lanternTiles=new Set(), fireExtra=new Map(); // fireExtra: "x,y" -> {r:roundsLeft, foe:placedByEnemy}
 let lanterns=[]; // {x,y,radius,life} — area light with strongest effect on center square
 let smokeTiles=new Set(); // "x,y:roundsLeft"
 let moveUndo=null;   // {u,x,y,face} snapshot for move-only undo
@@ -315,6 +327,17 @@ function renderActions(){
     mk('‹ Back',cancelConfirm,'ghost');
     return;
   }
+  if(mode==='inspect'){
+    // free look — never ends the turn; tap a unit's tile to enable its stat/equipment views
+    if(inspTarget){ mk('Stats',()=>showStats(inspTarget),'skill'); mk('Equipment',()=>showGear(inspTarget),'skill'); }
+    mk('‹ Done',exitInspect,'hot');
+    return;
+  }
+  if(mode==='flee'){
+    mk('✓ Confirm Flee',doFlee,'hot');
+    mk('‹ Cancel',()=>{mode='idle';infoEl.innerHTML=actionPrompt();renderActions();},'ghost');
+    return;
+  }
   if(mode==='target' && selSkill && selSkill!=='__basic'){
     // targeting a command skill: show Back so the player can cancel after reading the tooltip
     mk('‹ Back',()=>{selSkill=null;hiTarget=new Set();hiAoe=new Set();pendingCast=null;mode='skillmenu';infoEl.innerHTML='<b>Skills</b> — choose a command.';renderActions();},'ghost');
@@ -326,6 +349,8 @@ function renderActions(){
   mk('Move',enterMove,'',active._moved);
   mk('Attack',()=>{selSkill='__basic';enterTarget();},'',active._attacked);
   mk('Skill',()=>{mode='skillmenu';infoEl.innerHTML='<b>Skills</b> — choose a command.';renderActions();},'',active._attacked);
+  mk('View Field',enterInspect,'ghost');
+  mk('Flee',askFlee,'ghost');
   mk('Wait',endUnitTurn,'hot');
 }
 function actionPrompt(){return `<b>${active.name}</b> · HP ${active.hp}/${active.max} · RP ${active.rp} · Round ${round}. Move, Attack, Skill, or Wait.`;}
@@ -443,6 +468,7 @@ cv.addEventListener('click',e=>{const p=cpos(e);handleSelect(p.x,p.y);});
 function handleSelect(sx,sy){
   if(busy||!active||active.foe)return;
   const t=scrToTile(sx,sy); if(!t)return; const k=t.x+','+t.y;
+  if(mode==='inspect'){ inspectTile(t.x,t.y); return; }
   if(mode==='move'&&hiMove.has(k)){ doMove(active,t.x,t.y); return;}
   if(mode==='confirm'){
     // tapping inside the previewed footprint (or its center) fires; tapping another valid spot re-aims
@@ -455,6 +481,72 @@ function handleSelect(sx,sy){
     if(selSkill && selSkill!=='__basic' && SK[selSkill] && SK[selSkill].type!=='self'){ enterConfirm(t.x,t.y); return; }
     resolveTargeted(t.x,t.y); return;
   }
+}
+// ================= View Field (free inspection: tiles, effects, unit stats/gear) =================
+function enterInspect(){
+  if(busy)return;
+  mode='inspect'; inspTarget=null;
+  hiMove=new Set(); hiTarget=new Set(); hiAoe=new Set(); pendingCast=null; selSkill=null;
+  infoEl.innerHTML='<b>View Field</b> — tap any tile to read its terrain & active effects; tap a unit for stats/equipment. This does not use your turn.';
+  renderActions();
+}
+function exitInspect(){ inspTarget=null; mode='idle'; infoEl.innerHTML=actionPrompt(); renderActions(); }
+function sideLabel(u){ return u.foe?'Enemy':(u.npc?'Ally':'Player'); }
+function reactName(r){ return {block:'Block (vs physical)',parry:'Parry / Dodge (vs melee)',lightguard:'Light Guard (vs magic/fire)',snap:'Snap Aim (reactive shot)',cinder:'Cinder Flare (melee → fire)',quickstep:'Quickstep (hop away)'}[r]||'None'; }
+function tileReport(x,y){
+  const T=tt(x,y); const eff=[];
+  if(T.high) eff.push('High Ground — +10% ranged fired from here');
+  if(T.cover) eff.push('Cover — −15% hit vs a unit here from ranged');
+  if(T.blocked) eff.push('Blocked — impassable');
+  if(T.fire) eff.push('Fire — terrain, persistent (burns anyone standing on it)');
+  const fr=fireAt(x,y);
+  if(fr) eff.push(`Fire — ${fr.foe?'enemy':'your'}-set, ${fr.r} round${fr.r>1?'s':''} left`);
+  if(inSmoke(x,y)) eff.push(`Smoke — ${smokeRoundsAt(x,y)} round(s) left, −20% ranged through it`);
+  const le=lanternEffectAt(x,y);
+  if(le==='center') eff.push('Lantern (center) — allies here heal 5 + gain ACC');
+  else if(le==='aura') eff.push('Lantern light — allies here heal 3 + gain ACC');
+  // (concealed enemy traps would be withheld here unless player-owned; none exist in v0.1)
+  let html=`<b>Tile ${x},${y}</b> — ${T.n}`;
+  html += eff.length ? `<br>${eff.join('<br>')}` : '<br><span style="color:#8a7a55">No active effects.</span>';
+  return html;
+}
+function inspectTile(x,y){
+  const u=uAt(x,y); inspTarget=u||null;
+  let html=tileReport(x,y);
+  if(u) html += `<br><b>${u.name}</b> — ${sideLabel(u)}, HP ${u.hp}/${u.max}. <span style="color:#8fd0ff">Tap Stats or Equipment below.</span>`;
+  else html += '<br><span style="color:#8a7a55">Tap another tile, or Done.</span>';
+  infoEl.innerHTML=html; renderActions();
+}
+function showStats(u){
+  const st=Object.entries(u.statuses||{}).map(([s,d])=>`${s}(${d})`).join(', ')||'none';
+  infoEl.innerHTML=
+    `<b>${u.name}</b> · ${sideLabel(u)} · HP ${u.hp}/${u.max} · RP ${u.rp}`+
+    `<br>ATK ${u.ATK} · MAG ${u.MAG} · DEF ${u.DEF} · RES ${u.RES}`+
+    `<br>ACC ${u.ACC} · EVA ${u.EVA} · SPD ${u.SPD} · MOVE ${effMove(u)}`+
+    `<br>Reaction: ${reactName(u.react)}`+
+    `<br>Statuses: ${st}`+
+    `<br>Skills: ${(u.skills||[]).join(', ')}`;
+  renderActions();
+}
+function showGear(u){
+  const g=GEAR[u.cid];
+  const body = g ? Object.entries(g).map(([slot,item])=>`${slot}: <b>${item}</b>`).join('<br>')
+                 : '<span style="color:#8a7a55">No equipment recorded.</span>';
+  infoEl.innerHTML=`<b>${u.name}</b> · ${sideLabel(u)} — Equipment<br>${body}<br><span style="color:#8a7a55">(cosmetic in v0.1 — gear doesn’t change stats yet)</span>`;
+  renderActions();
+}
+// ================= Flee (retreat & end the battle) =================
+function askFlee(){
+  if(busy)return;
+  mode='flee'; hiMove=new Set(); hiTarget=new Set(); hiAoe=new Set(); inspTarget=null; selSkill=null;
+  infoEl.innerHTML='<b>Flee?</b> Your party withdraws and the battle ends. This cannot be undone.';
+  renderActions();
+}
+function doFlee(){
+  mode='over'; busy=true;
+  document.getElementById('ov-t').textContent='Retreat';
+  document.getElementById('ov-p').textContent=`Your party withdrew after ${round} round${round>1?'s':''}.`;
+  document.getElementById('overlay').classList.add('show');
 }
 // ---- preview + confirm: show exactly which tiles/units a skill will affect ----
 function affectedTiles(name,cx,cy){
@@ -594,7 +686,7 @@ function castHeal(u,ally,sk){
 function castEmberTile(u,x,y){
   const T=tt(x,y); if(T.blocked){ fizzle(); return; }
   busy=true;mode='idle';actEl.innerHTML='';
-  fireExtra.add(x+','+y);
+  addFire(x,y,2,u.foe);
   const en=uAt(x,y);
   if(en){ en.hp=Math.max(0,en.hp-3); en.statuses.Burn=2; pops.push(pop(en,'-3🔥','#ff9a4a')); }
   else pops.push({x,y,txt:'🔥 FIRE',c:'#ff9a4a',t:0,lift:T.high?HG_LIFT:0});
@@ -611,6 +703,10 @@ function castSmoke(u,x,y){
   setTimeout(()=>{busy=false;afterAct(u);},400);
 }
 function inSmoke(x,y){ for(const s of smokeTiles){ const p=s.split(':'); if(p[0]===x+','+y) return true; } return false; }
+function smokeRoundsAt(x,y){ for(const s of smokeTiles){ const p=s.split(':'); if(p[0]===x+','+y) return parseInt(p[1])||0; } return 0; }
+// fireExtra tiles carry a remaining-rounds counter and who placed them (owner side)
+function addFire(x,y,rounds,foe){ fireExtra.set(x+','+y,{r:rounds,foe:!!foe}); }
+function fireAt(x,y){ return fireExtra.get(x+','+y); }
 function castReveal(u,x,y){
   busy=true;mode='idle';actEl.innerHTML='';
   let cleared=0;
@@ -731,7 +827,7 @@ function landHit(att,def,sk){
   else if(!rr.tag){ pops.push(pop(def,'0','#ccc')); }
   // apply status from skill
   if(sk.status && def.hp>0 && Math.random()<0.9) def.statuses[sk.status]=2;
-  if(sk.type==='firetile'){ fireExtra.add(def.x+','+def.y); }
+  if(sk.type==='firetile'){ addFire(def.x,def.y,2,att.foe); }
   def._lastMiss=false;
 }
 function finishAtk(att,def,sk){
@@ -802,6 +898,10 @@ function startRound(){
     for(const s of smokeTiles){ const p=s.split(':'); const r=parseInt(p[1])-1; if(r>0) next.add(p[0]+':'+r); }
     smokeTiles=next;
   }
+  // fire-tile lifespan (placed fire lasts a couple of rounds; terrain fire is permanent)
+  if(fireExtra.size){
+    for(const [k,v] of [...fireExtra]){ v.r--; if(v.r<=0) fireExtra.delete(k); }
+  }
 }
 function nextTurn(){
   if(checkEnd())return;
@@ -814,7 +914,7 @@ function nextTurn(){
   }while(order[oi] && order[oi].hp<=0 && g<60);
   active=order[oi];
   if(!active){return;}
-  active._moved=false; active._attacked=false; active._sprint=false; mode='idle'; selSkill=null; moveUndo=null; pendingCast=null;
+  active._moved=false; active._attacked=false; active._sprint=false; mode='idle'; selSkill=null; moveUndo=null; pendingCast=null; inspTarget=null;
   // start-of-turn effects
   startOfTurn(active);
   if(active.hp<=0){ return nextTurn(); }
@@ -906,7 +1006,8 @@ function drawTile(x,y){
     if(isCenter){ ctx.fillStyle='rgba(255,240,170,.95)'; ctx.font='11px Georgia'; ctx.textAlign='center'; ctx.fillText('✦',p.x,p.y+4); ctx.textAlign='left'; }
   }
   if(fireExtra.has(k)){ctx.fillStyle='rgba(255,90,40,.35)';dia(p,hx,hy);
-    ctx.fillStyle='rgba(255,200,120,.9)';ctx.font='10px Georgia';ctx.textAlign='center';ctx.fillText('🔥',p.x,p.y+4);ctx.textAlign='left';}
+    ctx.fillStyle='rgba(255,200,120,.9)';ctx.font='10px Georgia';ctx.textAlign='center';ctx.fillText('🔥',p.x,p.y+4);
+    const fr=fireExtra.get(k); if(fr){ctx.fillStyle='rgba(255,235,190,.95)';ctx.font='7px Georgia';ctx.fillText(fr.r+'r',p.x,p.y+hy-2);} ctx.textAlign='left';}
   if(inSmoke(x,y)){ctx.fillStyle='rgba(200,200,210,.42)';dia(p,hx,hy);
     ctx.fillStyle='rgba(230,230,240,.7)';ctx.font='11px Georgia';ctx.textAlign='center';ctx.fillText('≈',p.x,p.y+4);ctx.textAlign='left';}
   if(hiMove.has(k)){ctx.fillStyle='rgba(90,170,255,.4)';dia(p,hx,hy);ctx.strokeStyle='rgba(150,210,255,.9)';ctx.lineWidth=1;diaStroke(p,hx,hy);}
@@ -914,7 +1015,8 @@ function drawTile(x,y){
   if(hiAoe.has(k)){ctx.fillStyle='rgba(255,150,60,.42)';dia(p,hx,hy);
     const isCtr=pendingCast&&pendingCast.x===x&&pendingCast.y===y;
     ctx.strokeStyle=isCtr?'rgba(255,235,150,.98)':'rgba(255,200,110,.85)';ctx.lineWidth=isCtr?2.5:1.5;diaStroke(p,hx,hy);}
-  if(hoverTile&&hoverTile.x===x&&hoverTile.y===y&&(mode==='move'||mode==='target')){ctx.strokeStyle='rgba(255,255,255,.9)';ctx.lineWidth=1.5;diaStroke(p,hx,hy);}
+  if(hoverTile&&hoverTile.x===x&&hoverTile.y===y&&(mode==='move'||mode==='target'||mode==='inspect')){ctx.strokeStyle='rgba(255,255,255,.9)';ctx.lineWidth=1.5;diaStroke(p,hx,hy);}
+  if(mode==='inspect'&&inspTarget&&inspTarget.x===x&&inspTarget.y===y){ctx.strokeStyle='rgba(140,220,255,.95)';ctx.lineWidth=2;diaStroke(p,hx,hy);}
 }
 function dia(p,hx,hy){ctx.beginPath();ctx.moveTo(p.x,p.y-hy);ctx.lineTo(p.x+hx,p.y);ctx.lineTo(p.x,p.y+hy);ctx.lineTo(p.x-hx,p.y);ctx.closePath();ctx.fill();}
 function diaStroke(p,hx,hy){ctx.beginPath();ctx.moveTo(p.x,p.y-hy);ctx.lineTo(p.x+hx,p.y);ctx.lineTo(p.x,p.y+hy);ctx.lineTo(p.x-hx,p.y);ctx.closePath();ctx.stroke();}
