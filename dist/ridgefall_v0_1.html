@@ -1,0 +1,1002 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<title>Ridgefall v0.1 — Core Combat</title>
+<style>
+:root{--parch:#e8ddc4;--gold:#c8992f;--gold-lt:#e8c766;--blood:#8a2f24;--panel:#241a12;--panel-lt:#3a2b1d;}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+html,body{height:100%;}
+body{background:radial-gradient(circle at 50% -10%,#2a2016,#0f0a06 70%);color:var(--parch);
+ font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;display:flex;flex-direction:column;
+ align-items:center;min-height:100vh;overflow-x:hidden;user-select:none;}
+header{text-align:center;padding:10px 10px 2px;}
+header h1{font-size:clamp(18px,5vw,26px);letter-spacing:.14em;font-weight:600;color:var(--gold-lt);
+ text-transform:uppercase;text-shadow:0 2px 0 #000,0 0 18px rgba(200,153,47,.35);}
+header p{font-size:10px;letter-spacing:.2em;color:#a8946a;text-transform:uppercase;}
+#round{font-size:11px;letter-spacing:.12em;color:var(--gold-lt);text-transform:uppercase;padding:4px;}
+#timeline{display:flex;gap:5px;padding:4px 10px 6px;flex-wrap:wrap;justify-content:center;max-width:560px;}
+.tl-chip{font-size:9px;letter-spacing:.06em;padding:3px 8px;border-radius:2px;background:var(--panel);
+ border:1px solid #000;color:#b9a878;text-transform:uppercase;}
+.tl-chip .rp{color:var(--gold-lt);}
+.tl-chip.active{background:var(--gold);color:#1a1006;box-shadow:0 0 10px rgba(200,153,47,.6);}
+.tl-chip.foe{color:#d8988a;} .tl-chip.foe.active{background:var(--blood);color:#f2d9d2;}
+.tl-chip.dead{opacity:.3;text-decoration:line-through;}
+#wrap{width:100%;max-width:560px;padding:0 8px;position:relative;}
+#zoombar{position:absolute;right:14px;bottom:10px;display:flex;flex-direction:column;gap:4px;}
+#zoombar button{width:34px;height:34px;font-size:17px;line-height:1;color:var(--parch);
+ background:linear-gradient(var(--panel-lt),var(--panel));border:1px solid #000;border-top:1px solid #5a4629;
+ border-radius:5px;cursor:pointer;box-shadow:0 2px 0 rgba(0,0,0,.5);font-family:inherit;}
+#zoombar button:active{transform:translateY(1px);box-shadow:0 1px 0 rgba(0,0,0,.5);}
+canvas#game{width:100%;height:auto;image-rendering:pixelated;display:block;margin:0 auto;border:1px solid #000;
+ border-radius:6px;box-shadow:0 8px 30px rgba(0,0,0,.6);background:#17130f;touch-action:manipulation;}
+.legend{font-size:9px;color:#8a7a55;letter-spacing:.04em;text-align:center;padding:5px 12px 2px;}
+#hud{width:100%;max-width:560px;padding:6px 8px 20px;display:flex;flex-direction:column;gap:7px;}
+#info{background:linear-gradient(var(--panel),#160f09);border:1px solid #000;border-top:1px solid #4a3a26;
+ border-radius:4px;padding:8px 12px;min-height:46px;font-size:12.5px;line-height:1.4;box-shadow:0 4px 0 rgba(0,0,0,.4);}
+#info b{color:var(--gold-lt);}
+#actions{display:flex;gap:6px;flex-wrap:wrap;min-height:42px;}
+button.act{flex:1 1 auto;min-width:76px;padding:11px 8px;font-family:inherit;font-size:12px;letter-spacing:.08em;
+ text-transform:uppercase;color:var(--parch);background:linear-gradient(var(--panel-lt),var(--panel));border:1px solid #000;
+ border-top:1px solid #5a4629;border-radius:4px;cursor:pointer;box-shadow:0 3px 0 rgba(0,0,0,.5);}
+button.act:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(0,0,0,.5);}
+button.act:disabled{opacity:.35;cursor:default;}
+button.act.hot{border-top-color:var(--gold-lt);color:var(--gold-lt);}
+button.act.skill{background:linear-gradient(#2e2438,#211a2a);border-top-color:#6a5a8a;color:#d8c8f0;font-size:11px;}
+button.act.ghost{background:none;box-shadow:none;border-color:#4a3a26;color:#a8946a;}
+#overlay{position:fixed;inset:0;background:rgba(10,6,3,.85);display:none;align-items:center;justify-content:center;z-index:50;text-align:center;padding:20px;}
+#overlay.show{display:flex;}
+#overlay h2{font-size:32px;color:var(--gold-lt);letter-spacing:.1em;margin-bottom:10px;text-shadow:0 0 22px rgba(200,153,47,.5);}
+#overlay p{color:#c9b98c;margin-bottom:18px;line-height:1.5;max-width:320px;}
+/* debug panel */
+#dbgtab{position:fixed;right:0;top:38%;transform:translateY(-50%);z-index:61;writing-mode:vertical-rl;
+ padding:10px 4px;font-family:inherit;font-size:10px;letter-spacing:.15em;color:#0f0a06;background:var(--gold);
+ border:1px solid #000;border-right:none;border-radius:5px 0 0 5px;cursor:pointer;box-shadow:-2px 2px 6px rgba(0,0,0,.5);transition:right .2s ease;}
+#dbgtab.shift{right:210px;}
+#dbgclose{float:right;cursor:pointer;color:#e89a8a;font-size:13px;line-height:1;padding:0 2px;}
+#dbgpanel{position:fixed;right:-220px;top:50%;transform:translateY(-50%);width:210px;z-index:60;
+ background:linear-gradient(#211a12,#140e08);border:1px solid #000;border-right:none;border-radius:8px 0 0 8px;
+ padding:10px 12px 14px;box-shadow:-4px 4px 20px rgba(0,0,0,.6);transition:right .2s ease;}
+#dbgpanel.open{right:0;}
+.dbg-h{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--gold-lt);text-align:center;margin-bottom:8px;}
+.dbg-sub{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#8a7a55;margin:7px 0 3px;}
+.dbg-row{display:flex;gap:5px;margin-bottom:4px;}
+.dbg-t{flex:1;padding:8px 4px;font-family:inherit;font-size:10px;letter-spacing:.04em;color:#b9a878;
+ background:#2a2016;border:1px solid #000;border-top:1px solid #4a3a26;border-radius:4px;cursor:pointer;}
+.dbg-t.on{background:var(--gold);color:#0f0a06;border-top-color:var(--gold-lt);font-weight:bold;}
+.dbg-a{flex:1;padding:8px 4px;font-family:inherit;font-size:10px;letter-spacing:.04em;color:var(--parch);
+ background:linear-gradient(var(--panel-lt),var(--panel));border:1px solid #000;border-top:1px solid #5a4629;border-radius:4px;cursor:pointer;}
+.dbg-a.kill{color:#e89a8a;} .dbg-a.rev{color:#8ff0a0;}
+.dbg-b{flex:1;padding:9px 4px;font-family:inherit;font-size:12px;font-weight:bold;color:var(--gold-lt);
+ background:linear-gradient(#2e2620,#1c1610);border:1px solid #000;border-top:1px solid #5a4629;border-radius:4px;cursor:pointer;}
+.dbg-b:active{transform:translateY(1px);}
+.dbg-t:active,.dbg-a:active{transform:translateY(1px);}
+</style></head><body>
+<header><h1>Ridgefall</h1><p>Core Combat v0.1</p></header>
+<div id="round">Round 1</div>
+<div id="timeline"></div>
+<div id="wrap"><canvas id="game"></canvas>
+<div id="zoombar">
+ <button onclick="zoomOut()">−</button>
+ <button onclick="zoomReset()">⤢</button>
+ <button onclick="zoomIn()">+</button>
+</div></div>
+<div class="legend">△ high ground · ▲ cover · 🔥 fire · ✕ blocked · ◆ = reaction point ready · pinch / scroll to zoom, drag to pan</div>
+<div id="hud"><div id="info">Loading…</div><div id="actions"></div></div>
+<div id="overlay"><div><h2 id="ov-t"></h2><p id="ov-p"></p><button class="act hot" onclick="location.reload()">Fight Again</button></div></div>
+<button id="dbgtab" onclick="var p=document.getElementById('dbgpanel');p.classList.toggle('open');this.classList.toggle('shift',p.classList.contains('open'));this.textContent=p.classList.contains('open')?'CLOSE':'DEBUG';">DEBUG</button>
+<div id="dbgpanel">
+  <div class="dbg-h">Playtest Controls <span id="dbgclose" onclick="var p=document.getElementById('dbgpanel');p.classList.remove('open');var t=document.getElementById('dbgtab');t.classList.remove('shift');t.textContent='DEBUG';">✕</span></div>
+  <div class="dbg-sub">Load Battle (class setups)</div>
+  <div class="dbg-row dbg-battles">
+    <button class="dbg-b" onclick="dbgLoadBattle(0)" title="Warder/Duelist/Lanternist vs 1 Raider">0</button>
+    <button class="dbg-b" onclick="dbgLoadBattle(1)" title="Battle 1: core 3 vs 4">1</button>
+    <button class="dbg-b" onclick="dbgLoadBattle(2)" title="Battle 2: +Bowman">2</button>
+    <button class="dbg-b" onclick="dbgLoadBattle(3)" title="Battle 3: +Ember Cantor">3</button>
+    <button class="dbg-b" onclick="dbgLoadBattle(4)" title="Battle 4: +Courier">4</button>
+    <button class="dbg-b" onclick="dbgLoadBattle(5)" title="Battle 5: full party stress">5</button>
+  </div>
+  <div class="dbg-sub">Toggles</div>
+  <div class="dbg-row"><button class="dbg-t" onclick="dbgToggle('infMove',this)">Infinite Move</button>
+    <button class="dbg-t" onclick="dbgToggle('infActions',this)">Infinite Actions</button></div>
+  <div class="dbg-row"><button class="dbg-t" onclick="dbgToggle('infHP',this)">Infinite Health</button>
+    <button class="dbg-t" onclick="dbgToggle('infMP',this)">Infinite RP/Mana</button></div>
+  <div class="dbg-sub">Kill / Revive player (by slot)</div>
+  <div class="dbg-row"><button class="dbg-a kill" onclick="dbgKill(0)">K1</button><button class="dbg-a rev" onclick="dbgRevive(0)">R1</button><button class="dbg-a kill" onclick="dbgKill(1)">K2</button><button class="dbg-a rev" onclick="dbgRevive(1)">R2</button><button class="dbg-a kill" onclick="dbgKill(2)">K3</button><button class="dbg-a rev" onclick="dbgRevive(2)">R3</button></div>
+  <div class="dbg-row"><button class="dbg-a kill" onclick="dbgKill(3)">K4</button><button class="dbg-a rev" onclick="dbgRevive(3)">R4</button><button class="dbg-a kill" onclick="dbgKill(4)">K5</button><button class="dbg-a rev" onclick="dbgRevive(4)">R5</button><button class="dbg-a kill" onclick="dbgKill(5)">K6</button><button class="dbg-a rev" onclick="dbgRevive(5)">R6</button></div>
+  <div class="dbg-sub">Battlefield</div>
+  <div class="dbg-row"><button class="dbg-a" onclick="dbgFullHeal()">Heal All</button><button class="dbg-a kill" onclick="dbgKillEnemies()">Kill Enemies</button></div>
+</div>
+<script>
+const SPR={"cell": 48, "anim": {"idle": [0, 1], "attack": [2, 3, 4], "hurt": [5]}, "frames": 6, "img": {"warder": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASAAAAAwCAYAAACxIqevAAACtElEQVR4nO3dsWsUQRTH8RexNiDW9hewSSyCEOHaq1JZia1aWwopAsF/4eyDRSorW0FBLDSNYMBKxEpCivwDZxEeuJvd3K27k9+82e+nyiVDmHuTzPvd3tydGQAAwNisqSeQm9u37ixWGXd2fkrtEmIdxuGGegIAxuvm0L8waufyeT+crK80/sOJLczyuR9R614XfR3qSlmXVEhAAGQGS0Clda4oqHueoqyLOqGRgADIDH4NKLr5qxcrjdvY3Us8k3FjHdLKJaGRgADIDJ6ASulcPr/vb/cbb+emlLrXRVuHulLXZSgkIAAyya4BRe9c9XlGmXf0utdFXYe6XNdFndBIQABkkiWgUjpXm3fvP/qXlXMU21sT6fmaqHVf9TyK+7k+NbPL66Cuf5vc10WV0EhAAGRk54BySRDeee8/utjpn7y5evyf3z/MzGx+cNGBj4+/mZnZ5ua9VFNM4vPXk8bEoa6/a1uHXOv/vwnO+f/D9tZkuEl1oEpoJCAAMr0T0FgTRG6W1d3dffC4cpv699OW4Fx9XaL//fv9/ecRTEXXBE0CAiDDa8GAEfLXdG3s7l2Z4Jz/3BOc65vgSEAAZNiAAMiwAQGQYQMCIMMGBECGZ8F6inJ+o1TUPzYSEAAZeQLKtYN9OWp+/xM/Sfzs5WszM/v16dDM4n7KBPXXyrX+14UEBEAmWQIqpYP5vLq+2lmN+muVUv9l+iY4EhAAmeTXgKJ2sFJQf62o9b+uBEcCAiDDBgSg1dn56VrK61NsQABk5OeAcrH/vPoevbOj5nHzg6fVcdPDVFMaFeo/TiQgADKDJaCoHcwf386mO4um73cdp0L9taLWX40EBEBmsO5RP+fQ1plWHYduqL9W1Pq3fcrFbLpjZpfPMS0b1xUJCIAM3Q+ALMGRgAAAAAAAAAAAyfwFAKWb1tzI++cAAAAASUVORK5CYII=", "duelist": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASAAAAAwCAYAAACxIqevAAAC60lEQVR4nO3dIW8UQRjG8bcEjSCQoAiCpKgLqao4UdkPgCYNH+IUEkEQiAqCIpcjwYBAgkMg0ChAViGapukXOAS8osPt3W5nZp99b/8/d9fNdeaZ5ObpZu5qBgAAMDY76gEMzc0bt5Ztrju7OCW7iliHcbimHgCA8bpe+gWj7lw+7nu3274n/71+KPOImnuqr3WYzz8szcyOjh5VzWNb1qUWGhAAmWINKHqDiIrcu/Hms7f3sOrvqb0upRqcuqHRgADIFL8HFN3nt89bXbd7OOv0un3dc9gWpdchbT6Tyf2Q61CqwQ2lOdOAAMgUb0Db0iB8fD8/vVj5uK2+7jnUyt2pGlzuOqibT6l1Uc+jFhoQAJlq94CiNYhUOs7ccfe1Y5XK3anyd1ddh6E1hquuS+151G7OrqlB04AAyFRrQFEbRC71uHNzd33Po+15lE3U+Tfpui59z6N0c3abGjQNCIDM4M4BqXbeZ5MHZmb2fvZm7fW/zs/NzOzx3TtmZrY4saWZ2cvj12Y2vJ23ic87Pdehzt81rYPnn1I3n+gNrlRzdm3nQQMCIJPdgMbaINxQxr0pd+e5O/LP09TgXLouaYNbnPw2M/082kqbXm6DpgEBkJHfA4ryzt8k6rgd+Wup8vfmsns4W9vgnP/8/waX16BpQABk5A0o+g52MN1XDyEL+WtFzz+3wdGAAMjIG1D0HSw68teKnn9ug6MBAZCRNyAAceU2OBoQABkaUIOn33+sfD49SYw6yH8caEAAZKo1oG3ZwfzEaKlPO/eF/LW2Jf/aaEAAZKrfA4q6g20L8teKmn9fDY4GBECGNyAAjc4uTndq/V94M96AAAhxDuif6at58sTqE55P3n289HgR/LM8Q0H+40QDAiBTrAFF3cH879uD6f7a77pte50K+WtFzV+NBgRAptjusenb8rteh27IXytq/j6eL1+/XXreP+WenmPadF1XNCAAMux+AGQNjgYEAAAAAAAAAKjmD+N26vYzFKYWAAAAAElFTkSuQmCC", "lanternist": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASAAAAAwCAYAAACxIqevAAAC9klEQVR4nO3cMWtTURiH8X9FOjqIhY5CO3RycO5gHZwc+g0KDhJKN8ExQz6DiHQQujh36K6Ds4tLBwsiDkJLho5d6hBeSg9JetN7bt7znvv8tsbbcvMeyHmaHiMBAAD0zYr3DZTm8aMn102uG19eMLsOsQ798MD7BgD0V/bdI+rOZff99vVWo+sPT04llfM8os49FX0dUrWsS1coIABuHub6QffYua6l/r7y58LcyxRlXbwLjQIC4CZbAdXi/buDRtcdnjS7DvfDOnSrlEKjgAC4yV5AtexcmzuT+/v19cPUr0tTy9xT0dYhVeu65EIBAXDT2XtA0Xeu9D6j3Hf0uaeirkOq1HXxLjQKCICbzgqolp0rmqhzb3oeZZar84/XkrS6tl/k+abS18Wr0CggAG56fw7Idt5vR88lSX//fJ57/enZWJL0afhUkjQYafL9x68kSc9efilyB07Z8/Y+EZ3O38xaB5v/7t6b24///H7r62UXUduC+3c2kiStru1nuZ9FeRUaBQTATesC6mtBGNu5zNX5tst7EXfN3djcTdT5Hx9Nnq/3/GcVnEnXJS249Y2hpJv5m1Lf00pLr21BU0AA3Li/B+S9g/VdtPlbOVgB3aXUkvAuOCuXzZ2DuQVn7N+t4EzbgqaAALhxLyBgEU3Lx5RWPrUUnGlbcBQQADcUEEJKzwGlSi2H6AWXGwUEwA0F1JKd4/A+Udw3VhKD0W9Jt04Sh1iHqAWXGwUEwI17AZVaEC/2fkx9PD1JHF0t849WCtELLhcKCICbzgqoloKwMmj7v52Xjfn7qr3gTNuCpoAAuOn8PaCoO1gtmL+vqPNfVkFTQADc8AIEYKbx5cVKl38h5QUIgBv3c0Cl2NreTR6Z/jtweoJ1MBp2c0M9w/z7iQIC4CZbAUXdwez32/WN4dzPum16nRfm7yvq/L1RQADcZNs9mn5afu5P1ccE8/cVdf52P+knG6YnnJtetygKCIAbdj8AbgVHAQEAAAAAAAAAOvMf8/ni9ztxmtMAAAAASUVORK5CYII=", "raider": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASAAAAAwCAYAAACxIqevAAAC8ElEQVR4nO3doW/bQBTH8ZdpcBooLBqqioc2Ok0FGx2YBqaAoipwoJqigqlgoLAqjgaGRkui8u5PmIKnsBVE5RlIn7Rc7dqZ7/Lunb8fUtlyk/O7NO8X6+KKAAAA9M3AegC5ebrzZNnmuMXNLbVLiHnoh0fWAwDQX49jP6DXzqXj3n220/ZXliL5nIfXuoe8z0OolHlJhQQEwEy0BFRa5/KCuufJy7xYJzQSEAAz0a8BeXdw+LzVcZPxVeKR9BvzkFYuCY0EBMBM9ARUSufS8Q1PX1du56aUuodizcPFxaTyWsfR0TDpNZfY8xKeR+rxp0YCAmAm2TUgbwkiFI7TS8f1XvdQ13nIRa7zYp2cSUAAzCRLQF4ThPry4UxERE6+f6rczlWsxLDt+tetR/E6D6Hck5xVQiMBATCTLAF56VzaeYcv91c7Ln+LiMjJ5fu143R7/mchIiIHe7siIjKdzbNaWdy27nre1uO+V39VMw+H395s9PjvXuy1WunbVdOK4tz/HmIntLYJmgQEwEznBFRaguhqWx33noa6K627Kr3+P37OBqufwyTPV5vgVDAv+vrXJDedzUWkvv7h+aS6BrdpclZdXzckIABmsvsumFmC+E//JIqlSPqOm1op9feqLsHFpsllMr5aPV9DctaEpwlOdU3QJCAAZswTkPcE0fQZPnfU31bpCa4JCQiAGfME5L2DeUf9bXmvf9cETQICYMY8AQHwq2uCIwEBMEMCqjG5/lW5P1xJjDSofz+QgACYSXdHxEI6mH62bfv/k3JB/W2VUv/USEAAzCS/BuS1g5WC+tvyWv9tJTgSEAAzvAEBqLW4uR2kXKXNGxAAM6wDurP/drS+43pUedyrj5/Xtqfj6uOwGerfTyQgAGaiJSCvHUw/3x6PRw/e67btcVaovy2v9bdGAgJgJlr3aHu3/Nh31ccK9bfltf46nq+n52v7j++SWbiOqem4TZGAAJih+wEwS3AkIAAAAAAAAABAMn8BjH73TUJS94kAAAAASUVORK5CYII=", "archer": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASAAAAAwCAYAAACxIqevAAACxElEQVR4nO3dsW7TUBTG8Q/ECAyIDQk2xIwYEAuClYgHiHiBMqJMqGPVqXN5AZQHqDIXdWHqA2SFATF1QGwMYelB5CqO7dg351z7/9vS3FbH50Y6X20nkQAAAMbmhncB0dy9d3vVZN2vq9/0LiP2YRxuehcAYLxu9f0HS51cVvejB3carf8mraQ4x1Fq31Ol70NqKPuSCwkIgJveEtDQJlcp6HtMpeyLd0IjAQFw0/s5oNK9OXjaaN3p4UXmSsaNfcgrSkIjAQFw03sCGsrksvreH73c+DiaofQ9Vdo+pIa6L30hAQFwk+0cUOmTK62zru7FyXQlSZPZ3PXqUul9TzXdhyj9rxJ1X7wTGgkIgJtsCajUBLErq9v7ONr23XjX3fR+lCpR+l+lbl/mH99Kkiaz+d5q+p9XQiMBAXAT5j4grwlmk3fy7oUk6fvyz9b1P39cSZKevX4iSbo8X67dHxF9Ehs7bu+60/6bqn2w/lfxPo5dTY/PJPm9bnZNzmbXuklAANx0TkBjTRDR1PXdWN8N/e+mKsGZdF/SBHd5vpS01n9JcfufJr2urxsSEAA3Yc4BAdgfSy6nhxdbE5yx5zckuE4JmgQEwA0JCAjs5ODV1qtrs09fQp0jaosEBMANCQgIrPSEU4cEBMANCahnUe/fGAv6XxYSEAA34RJQlAm2+Px148/TO4n/rQ9Sd1dRjoP+l30cTZGAALjJloCGMsHsDs+6dztHq5v++xpK/9vivWAAipH9HFCpE2wo6L+vUvu/rwRHAgLgJtxVMABx5E5wJCAAbkhA16YP7689XlSs+/D88frvXX+iHbqh/+NEAgLgprcEVOoEs/9xp8dnGz/rtu06L/TfV6n990YCAuCmt+lR9Wn5u65DO/TfV6n9t3rsm1mNfU9ZehWsbl1bJCAAbph+ANwSHAkIAAAAAAAAAJDNX91I9k+4EK/5AAAAAElFTkSuQmCC", "spark": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASAAAAAwCAYAAACxIqevAAAC20lEQVR4nO3cvW4TQRSG4S8oJUIoRQqUAqUybeTKV5AyKaCiQlSIC6CwKCJL3ABKmQrR4pKC2lW6FKSiQpFoogjRm8IcIU+88Xp/cubsvk+33lU0PhPPfDserwQEdHV6M786vZlXPY88PPBuAID+2vJuQG4e7TwsNWv+vv6zJS1m2lXnn7x5TG1rKNsPl5OfK1/Pvf72f1PUznXnu4IEBMDNdtN/MGqCsHY/e7pT6vrvUlbrC5vW3eRSf7NpP+SuqF8G4z1J+dX/vpGAALhpLAFFTxBRVa17moTQrChJrmpyNnUTHAkIgJvG14Cie/56UOq6k/FM0v+R/nD4ci5JX88/kSwaULYfbC1ltH8kifqXlUtyJgEBcNN4AupKgrD2vZ+MVh7nZtO6m1zrb6L1Q2pdv3zWC0nSt7NdSfnVv20kIABuWlsDij5zpe2M0u7odU9F7YdUrv1SNTmbugmaBATATWsJqCszVzRR6152P0pUufeLV0IjAQFw0/t9QDbzHg/fSpIupndf/+t68etr23cy0zTkzG3v23tHdFp/U9QPVv/cRE9wXgmNBATATe0E1NcEkZuL6UGp60b7u0vH1L+eogRn0s9DmuBmPxYX2Ochd2nSq5ugSUAA3PR+DQjoI0suJ+PZnQnOHA8XCftWgquZoElAANwwAAFwwwAEwA0DEAA3DEAA3DAAAXDDAATADfuACnw5/7jy9Sg7VqOj/v1AAgLgprUE1JUZzHaMrvu1c27P8qX+vrpS/7aRgAC4aX0NKOoM1hXU31fU+t9XgiMBAXDDt2AACrWd4EhAANyQgP75cPRu6bjoHvjs1fLrg/G0rSb1CvXvJxIQADe1V97t3vBysvyktMF4T9Lte8h113kp+6zbpp+JWxf1z6PdUetf9ExrS6Bp+9NvweyZ1lXbTwIC4KaxUTfqDNYV1N9X1Pp7JzgSEAA3zH4A3BIcCQgAAAAAAAAA0Jq/GRSlzyFrJf8AAAAASUVORK5CYII=", "bowman": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASAAAAAwCAYAAACxIqevAAAC40lEQVR4nO3coW5UQRTG8VOCQiBIg0CjSEkq+gIYTBskApL1oFdQEipqQNRgqG0QPMCGmpp9AUQFQSEJghBCENhFbA7NTnv33t07c8+Zmf/P7XbSzH6T9Hy9e3dFAAAAarNhvQFvbt3cnHVZ9+vPT7JLiHOowzXrDQCoV/Tpkevk0n3v3L3Raf2nr39FxM/ryDX3UO7nECrlXFKhAQEwcz3WL1p9cs3X1/qXPxZy9ymXc7FuaDQgAGaiNaBSnLx91Wnd1u5+4p3UjXNIy0tDowEBMBO9AZUyuXR/n09fX/m4zcejJzMRkb3xh0H+py8l99C65zB0/k1KPZdYaEAAzCS7BpRbgwiF+2zb99GzBzMRkfHxdEPkYt9Dv46+uSvr/FXXc/CSf5NVz2WofVs3NBoQADPJGlCuDSJ3q+aurPPvej9KrtrO5eXT+yIiMj6eisjw+cdqzqrrvmlAAMxUfx+QTt57zx+KiMjj0+nS9b+//RARkTuPtudPTM6XTm6vTU5ft/Ud0WH+qukcNP+uhso/9wa3bnNW6zZoGhAAM70bUK0Nwpu23NX/3BX599LU4FR4LmGD+z45F5GLa0Ahb/mHTa9vg6YBATBT/TUgoEbaXLZ295c2OKU/v3QNrmeDpgEBMEMDAhzT5tD02PqaUF80IABmaECAY97eBYuNBgTADA0osVInVy7I3zcaEAAz7huQ1QT78u7syucv3UlcOPK3VXqDowEBMJOsAZUywfSO0bZPO+ungJX15CJ/8veAT8MDcCv5NaBcJ1hfXvZN/rZyzX+oBkcDAmDG7btgXiZYrcjflpf8Uzc4GhAAM24b0NBebC4+HjWse7N9e3HdJM1+akP+Zena4GhAAMxEa0C5TjD9H3d0eLb0u267rrNC/rZyzd8aDQiAmWjTo+u35cf+Vn3Mkb+tXPPX/bw/WPxO6NHh/D6g8F2wtnWrogEBMMP0A2DW4GhAAAAAAAAAAIBk/gGPrBJViAcYUQAAAABJRU5ErkJggg==", "ember": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASAAAAAwCAYAAACxIqevAAADMklEQVR4nO3dr28TYRzH8U8JElCtwLEMsTnUhsFVTFSga5jAYAaiGkGCawIhJNgRklkIqUD0D2BTM4QKFhYMgS0IwBfRPVnu2a537H58n+f6fpnmrrf06fe73PO5H21bMvZluD6VpOWV65Kkg8l3SdLNwW7LblTZ/HH7Yn0fsY7bF+v7iGXcZblkPQAAi+uy1QunzWBu2T1f90zQvnZlWufrWQm1/k5aH452upJOk0KW6ejuVJJavXdBJYrQ659X0QRHAgJgpvQEFGuCcONe6VzNtf3tJ58kSR8fz5atj+Hz1v3499+gZ9SsPtx5uJtY3n4we7Sufxq/LyS4JBIQADOlJaDYE8RFuXFud29MJWlzfGiSfPLWfSIlZqbYr8K4/6Ph2g9J9dc/TVpfQktw1smZBATAjNlVMMc6Qfjevnmaa7vVja2KR1KP0Orv5O1D+9d7SdLr5/uJ9aGeO/FtvvomSbq/VG+Cu2hydkmorARNAgJgpvQE1JQE4cb3+cOLc5dD05S6+7L60OmPJUnDtXbi70JJPll9iT3BFU3QJCAAZio7BxRbgvD544xl3LHX3RdrH3zZfdlPbF9X8rFOziQgAGYqS0BNmbliE2vdY72DPq/Q+2KVnElAAMyY3wdkzc28o96SJOng5bO5209+/pF0etVlsKcoZ273vq0/G+bX30nrg6t/aGJPcFYJjQQEwEzhBLSoCSI0WXV3/PtlqH8xaQnO8fviJ7jB3rGks30JlZ/0iiZoEhAAMwt/DghYRC65rG5szU1wjnv+bIIrlqBJQADMsAMCYIYdEAAz7IAAmGEHBMAMOyAAZtgBATDDfUApeqOv566P5Y7V2FH/xUACAmCmsgTUlBnM3TGa9WnnUH5NwqH+tppS/6qRgACYqfwcUKwzWFNQf1ux1r+uBEcCAmCGq2AAUlWd4EhAAMyQgE6s95eTK1KOge89upVYHpz8MieKof6LiQQEwExpCSjWGcwd43b647nfdZt3OyvU31as9bdGAgJgprTZI++35Zf9rfqYof62Yq2/G8/RTjexvnOSzPyrYFnb/S8SEAAzzH4AzBIcCQgAAAAAAAAAUJl/kdf8PJJZ4xkAAAAASUVORK5CYII=", "courier": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASAAAAAwCAYAAACxIqevAAAC8klEQVR4nO3cvW4TQRiF4S+IGiGUKleALC6AihpZLiktkYKaKkUKlCKiSJEqFQWFkXwJEaKmygWglIiKKkIRJY0pYCJ5/LOz2Rmf+Xbfp1tnFM2ekTzH6/WaAQAADM2eegK1efJ4f5Ey7tftDdkVxDoMwwP1BAAM18Pc/9DrzhXm/eLZftL4r99sYVbPeXjNPeZ9HWJ9WZdSaEAAZLI1oL7tXF6Qe528rIu6odGAAMhkvwbk3Yezo6Rxo8lx4ZkMG+tQVi0NjQYEQCZ7A+rLzhXmd315tva4Nn3JPeZtHWJ9XZdcaEAAZIpdA/K+c8Xz9DJv77nHSq3D1eXpwszs+eRkJ9861bou6oZGAwIgU6wBeW0QpZXeeb3mnno/Sle7bj5B7nXJfR6qhkYDAiDj7j6g3O/8YecdvTs1M7NXV3+2jr/98d3MzA6mh/9emM+S7o9Q7bybhPNue19H6fyDTesQ8m+rdP7eG5yqOdOAAMh0bkBDbRCpdjXvptyDu9wD8u9kU4ML4nWJG9zP+czM/OQfN72uDZoGBECm+mtAtbzzt+V13rG25zE7f70wMzs8+rSXclzKUPNPFZrLaHK8tcEF4e8r1+A6NmgaEACZahuQlx0sXFM5MFv6bFz7vJvcN/+42TQdd5U7fxpcXk3nQQMCICNvQN4bxMeXj8zM7M2X3+KZ3A/5L/Pe4GqR2uBoQABk5A3Ie4PwOu+A/LW859+1wdGAAMjIG1Ct7/zX70/Wvr5yJ7Fz5K9Va/6pujY4GhAAmXLPA+rJDhbu8Nz0a+fU3/LsGvlr9SX/Jl0bHA0IgEzxa0Bed7C+IH8tr/nvqsHRgADIyL8FA1Cv0g2OBgRAhgb03/nTm6Xj8YZx4b6Hu3HzQhMaGPIfJhoQAJlsDcjrDhY+u46nF1ufdZs6ToX8tbzmr0YDAiCTbfdIfVp+16fqYz3y1/Kaf5jP5/nbpdfH0wszW/0WrGlcWzQgADLsfgBkDY4GBAAAAAAAAAAo5i8/DjwP8tHx4AAAAABJRU5ErkJggg=="}};
+/* ============ RIDGEFALL v0.1 — Core Combat Prototype ============
+ * Built to the locked v0.1 spec: 10x10 grid, flat terrain (high-ground
+ * marked, not layered), exact stats, hit/damage formulas, 4 skills per
+ * job, Reaction Points, Classic-Mode reaction rolls. Placeholder art.  */
+
+const cv=document.getElementById('game'), ctx=cv.getContext('2d');
+ctx.imageSmoothingEnabled=false;
+const VW=560, VH=520; cv.width=VW; cv.height=VH;
+
+// ---- iso projection (flat board; high-ground is a flag, not elevation) ----
+const TW=44, TH=22, OX=VW/2, OY=70;
+const HG_LIFT=6; // tiny visual lift for high-ground tiles only
+// camera: zoom + pan (applied on top of base projection)
+const cam={z:1, x:0, y:0, min:0.6, max:2.4};
+function iso(gx,gy,lift=0){
+  const wx=OX+(gx-gy)*(TW/2), wy=OY+(gx+gy)*(TH/2)-lift;
+  return{x:(wx-VW/2)*cam.z+VW/2+cam.x, y:(wy-VH/2)*cam.z+VH/2+cam.y};
+}
+
+// ---- Map: 10x10 ----
+const N=10;
+// terrain codes: 0 normal, 1 cover, 2 high, 3 fire, 4 blocked
+const MAP=[
+ [0,0,0,0,0,0,0,0,0,0],
+ [0,0,0,2,2,0,0,0,0,0],
+ [0,0,0,2,2,0,0,1,0,0],
+ [0,0,0,0,0,0,0,1,0,0],
+ [0,4,0,0,3,3,0,0,0,0],
+ [0,4,0,0,3,3,0,0,4,0],
+ [0,0,0,1,0,0,0,0,4,0],
+ [0,0,0,1,0,0,2,2,0,0],
+ [0,0,0,0,0,0,2,2,0,0],
+ [0,0,0,0,0,0,0,0,0,0],
+];
+const TT={
+ 0:{n:'Normal', top:'#6f8a44',topSh:'#5c7538',side:'#3f4f24'},
+ 1:{n:'Cover',  top:'#4f7040',topSh:'#3f5a33',side:'#2c421f', cover:true},
+ 2:{n:'High Ground',top:'#9a9078',topSh:'#847a63',side:'#4d453a', high:true},
+ 3:{n:'Fire',   top:'#b8502f',topSh:'#9a3f24',side:'#5c2318', fire:true},
+ 4:{n:'Blocked',top:'#3a352c',topSh:'#2c281f',side:'#1c1812', blocked:true},
+};
+const tt=(x,y)=>TT[MAP[y][x]];
+const inB=(x,y)=>x>=0&&y>=0&&x<N&&y<N;
+const passable=(x,y)=>inB(x,y)&&!tt(x,y).blocked;
+
+// ---- Units (exact v0.1 stats) ----
+function U(o){return Object.assign({hp:o.HP,max:o.HP,px:o.x,py:o.y,anim:'idle',aframe:0,face:o.foe?-1:1,flash:0,rp:1,acted:false,statuses:{}},o);}
+let units=[
+ U({id:'war',cid:'warder',name:'Warder',foe:false,x:2,y:9,HP:45,ATK:8,MAG:2,DEF:6,RES:3,ACC:80,EVA:5,SPD:8,MOVE:3,
+    skills:['Guard Ally','Shield Bash','Brace','Intercept'], react:'block'}),
+ U({id:'due',cid:'duelist',name:'Duelist',foe:false,x:4,y:9,HP:34,ATK:10,MAG:2,DEF:4,RES:3,ACC:85,EVA:12,SPD:11,MOVE:4,
+    skills:['Rival Mark','Quick Cut','Hamstring','Riposte Stance'], react:'parry'}),
+ U({id:'lan',cid:'lanternist',name:'Lanternist',foe:false,x:6,y:9,HP:30,ATK:3,MAG:9,DEF:3,RES:6,ACC:80,EVA:8,SPD:9,MOVE:4,
+    skills:['Warm Light','Place Lantern','Reveal','Guiding Glow'], react:'lightguard'}),
+ U({id:'rd1',cid:'raider',name:'Raider',foe:true,x:3,y:1,HP:28,ATK:7,MAG:0,DEF:3,RES:2,ACC:75,EVA:5,SPD:8,MOVE:4,
+    skills:['Basic Attack','Heavy Swing'], react:null}),
+ U({id:'rd2',cid:'raider',name:'Raider',foe:true,x:6,y:1,HP:28,ATK:7,MAG:0,DEF:3,RES:2,ACC:75,EVA:5,SPD:8,MOVE:4,
+    skills:['Basic Attack','Heavy Swing'], react:null}),
+ U({id:'arc',cid:'archer',name:'Archer',foe:true,x:8,y:2,HP:22,ATK:6,MAG:0,DEF:2,RES:2,ACC:80,EVA:8,SPD:9,MOVE:4,
+    skills:['Basic Shot','Pin Shot'], react:null, proj:'arrow'}),
+ U({id:'spk',cid:'spark',name:'Spark Caster',foe:true,x:5,y:0,HP:20,ATK:2,MAG:8,DEF:2,RES:5,ACC:80,EVA:5,SPD:8,MOVE:3,
+    skills:['Spark','Fire Tile'], react:null, proj:'bolt'}),
+];
+
+// ---- Job & enemy templates for the battle-setup selector ----
+const JOB={
+ warder:    {cid:'warder',name:'Warder',HP:45,ATK:8,MAG:2,DEF:6,RES:3,ACC:80,EVA:5,SPD:8,MOVE:3, skills:['Guard Ally','Shield Bash','Brace','Intercept'], react:'block'},
+ duelist:   {cid:'duelist',name:'Duelist',HP:34,ATK:10,MAG:2,DEF:4,RES:3,ACC:85,EVA:12,SPD:11,MOVE:4, skills:['Rival Mark','Quick Cut','Hamstring','Riposte Stance'], react:'parry'},
+ lanternist:{cid:'lanternist',name:'Lanternist',HP:30,ATK:3,MAG:9,DEF:3,RES:6,ACC:80,EVA:8,SPD:9,MOVE:4, skills:['Warm Light','Place Lantern','Reveal','Guiding Glow'], react:'lightguard'},
+ bowman:    {cid:'bowman',name:'Bowman',HP:28,ATK:8,MAG:2,DEF:3,RES:3,ACC:82,EVA:8,SPD:9,MOVE:4, skills:['Aimed Shot','High Shot','Pinning Shot','Overwatch'], react:'snap', proj:'arrow'},
+ ember:     {cid:'ember',name:'Ember Cantor',HP:27,ATK:3,MAG:10,DEF:2,RES:5,ACC:80,EVA:6,SPD:8,MOVE:4, skills:['Fire Spark','Ember Tile','Smoke Chant','Kindling'], react:'cinder', proj:'bolt'},
+ courier:   {cid:'courier',name:'Courier',HP:31,ATK:6,MAG:3,DEF:3,RES:3,ACC:80,EVA:14,SPD:12,MOVE:5, skills:['Quick Item','Sprint','Drag Ally','Supply Toss'], react:'quickstep'},
+};
+const FOE={
+ raider:{cid:'raider',name:'Raider',HP:28,ATK:7,MAG:0,DEF:3,RES:2,ACC:75,EVA:5,SPD:8,MOVE:4, skills:['Basic Attack','Heavy Swing'], react:null},
+ archer:{cid:'archer',name:'Archer',HP:22,ATK:6,MAG:0,DEF:2,RES:2,ACC:80,EVA:8,SPD:9,MOVE:4, skills:['Basic Shot','Pin Shot'], react:null, proj:'arrow'},
+ spark: {cid:'spark',name:'Spark Caster',HP:20,ATK:2,MAG:8,DEF:2,RES:5,ACC:80,EVA:5,SPD:8,MOVE:3, skills:['Spark','Fire Tile'], react:null, proj:'bolt'},
+};
+const BATTLES={
+ 0:{players:['warder','duelist','lanternist'], foes:['raider']},
+ 1:{players:['warder','duelist','lanternist'], foes:['raider','raider','archer','spark']},
+ 2:{players:['warder','duelist','lanternist','bowman'], foes:['raider','raider','archer','archer','spark']},
+ 3:{players:['warder','duelist','lanternist','bowman','ember'], foes:['raider','raider','archer','spark','spark']},
+ 4:{players:['warder','duelist','lanternist','bowman','ember','courier'], foes:['raider','raider','raider','archer','spark']},
+ 5:{players:['warder','duelist','lanternist','bowman','ember','courier'], foes:['raider','raider','raider','archer','archer','spark','spark']},
+};
+const PSTART=[[2,9],[4,9],[6,9],[1,8],[7,8],[3,8]];
+const FSTART=[[3,1],[6,1],[8,2],[1,2],[5,0],[4,1],[7,1]];
+function loadBattle(n){
+  const b=BATTLES[n]; if(!b)return;
+  units=[];
+  b.players.forEach((j,i)=>{ const t=JOB[j]; const s=PSTART[i]||[i,9];
+    units.push(U(Object.assign({},t,{id:'p'+i,foe:false,x:s[0],y:s[1]}))); });
+  b.foes.forEach((f,i)=>{ const t=FOE[f]; const s=FSTART[i]||[i,0];
+    units.push(U(Object.assign({},t,{id:'e'+i,foe:true,x:s[0],y:s[1]}))); });
+  lanterns=[]; lanternTiles=new Set(); fireExtra=new Set(); projectiles=[]; pops=[];
+  order=[]; oi=-1; round=0; active=null; mode='idle'; busy=false; selSkill=null; moveUndo=null;
+  document.getElementById('overlay').classList.remove('show');
+  buildOrder(); nextTurn();
+}
+window.dbgLoadBattle=(n)=>loadBattle(n);
+
+// ---- Skill definitions (v0.1 slice) ----
+// type: melee/ranged/heal/buff/support ; power ; range ; acc(skill accuracy)
+const SK={
+ // Warder
+ 'Guard Ally':{type:'support',range:1,acc:0,desc:'Guard an adjacent ally (they take -30% until your next turn).',target:'ally'},
+ 'Shield Bash':{type:'melee',power:5,range:1,acc:75,desc:'Melee hit, may Expose.',status:'Exposed'},
+ 'Brace':{type:'self',range:0,acc:0,desc:'Gain Guarded (reduce damage) until next turn.',selfstatus:'Guarded'},
+ 'Intercept':{type:'self',range:0,acc:0,desc:'Ready: block the next hit on a nearby ally.',selfstatus:'Intercept'},
+ // Duelist
+ 'Rival Mark':{type:'debuff',range:3,acc:90,desc:'Mark a foe: it takes bonus damage from you.',status:'Marked',target:'foe'},
+ 'Quick Cut':{type:'melee',power:6,range:1,acc:90,desc:'Fast, accurate melee strike.'},
+ 'Hamstring':{type:'melee',power:3,range:1,acc:85,desc:'Melee hit, applies Slow.',status:'Slow'},
+ 'Riposte Stance':{type:'self',range:0,acc:0,desc:'Boost parry reaction chance this round.',selfstatus:'Riposte'},
+ // Lanternist
+ 'Warm Light':{type:'heal',power:6,range:3,acc:0,desc:'Heal an ally.',target:'ally'},
+ 'Place Lantern':{type:'zone',range:2,acc:0,desc:'Create a safe tile (allies on it get Guarded).'},
+ 'Reveal':{type:'reveal',range:4,acc:0,desc:'Clear smoke (radius 2) and Expose foes there for 1 round.'},
+ 'Guiding Glow':{type:'buff',range:2,acc:0,desc:'Give an ally +ACC/EVA (Guided).',status:'Guided',target:'ally'},
+ // Raider
+ 'Basic Attack':{type:'melee',power:0,range:1,acc:85,desc:'Standard melee.'},
+ 'Heavy Swing':{type:'melee',power:6,range:1,acc:70,desc:'Strong but less accurate.'},
+ // Archer
+ 'Basic Shot':{type:'ranged',power:0,range:3,acc:85,desc:'Standard shot.'},
+ 'Pin Shot':{type:'ranged',power:2,range:3,acc:80,desc:'Shot that Slows.',status:'Slow'},
+ // Spark
+ 'Spark':{type:'magic',power:4,range:3,acc:85,desc:'Magic bolt.'},
+ 'Fire Tile':{type:'firetile',power:3,range:2,acc:85,desc:'Magic hit; leaves burning ground (test).'},
+ // Bowman (ranged 2-5, LoS simplified to range)
+ 'Aimed Shot':{type:'ranged',power:4,range:5,minr:2,acc:90,desc:'Reliable shot. +2 dmg if Bowman did not move.'},
+ 'High Shot':{type:'ranged',power:5,range:5,minr:2,acc:80,desc:'+3 dmg if firing from high ground.'},
+ 'Pinning Shot':{type:'ranged',power:3,range:5,minr:2,acc:75,desc:'Shot that applies Hampered (MOVE -1).',status:'Hampered'},
+ 'Overwatch':{type:'self',range:0,acc:0,desc:'Stance: shoot the first enemy that enters your range this round.',selfstatus:'Overwatch'},
+ // Ember Cantor
+ 'Fire Spark':{type:'magic',power:5,range:4,acc:85,desc:'Simple fire magic damage.'},
+ 'Ember Tile':{type:'zonefire',range:4,acc:0,desc:'Create a Fire Tile (2 rounds). Burns anyone standing on it.'},
+ 'Smoke Chant':{type:'zonesmoke',range:4,acc:0,desc:'Create smoke (radius 1): ranged hit -20% through it.'},
+ 'Kindling':{type:'magic',power:3,range:4,acc:80,desc:'Fire damage; applies/refreshes Burn.',status:'Burn'},
+ // Courier
+ 'Quick Item':{type:'heal',power:12,range:2,acc:0,desc:'Use Minor Tonic (heal 12) on self or ally within 2.',target:'ally',flatHeal:true},
+ 'Sprint':{type:'self',range:0,acc:0,desc:'+3 MOVE this turn but cannot attack. Tap self to confirm.',selfstatus:'Sprint'},
+ 'Drag Ally':{type:'drag',range:1,acc:0,desc:'Pull an adjacent ally to another tile beside you.',target:'ally'},
+ 'Supply Toss':{type:'buff',range:3,acc:0,desc:'Aid an ally (reduce a cooldown / grant Inspired).',status:'Inspired',target:'ally'},
+};
+
+// ---- helpers ----
+const dist=(a,b)=>Math.abs(a.x-b.x)+Math.abs(a.y-b.y);
+const uAt=(x,y)=>units.find(u=>u.hp>0&&u.x===x&&u.y===y);
+const alive=f=>units.filter(u=>u.hp>0&&u.foe===f);
+
+// facing/angle: front/side/back relative to defender facing
+function angleBonus(att,def){
+  // def.face is -1 (up-left) or 1 (down-right) in our simplified model.
+  // Use vector: if attacker is "behind" along facing axis -> back.
+  const bx=def.face; // 1 means facing +x/-y (down-right), -1 up-left
+  const rel=(att.x-def.x)*bx + (def.y-att.y)*bx;
+  if(rel>0) return 20;   // back
+  if(rel===0) return 10; // side
+  return 0;              // front
+}
+
+// ---- Hit & damage (exact v0.1 formulas) ----
+function hitChance(att,def,skill){
+  let acc=(skill.acc||0)+att.ACC-def.EVA;
+  acc+=angleBonus(att,def);
+  const ranged=(skill.type==='ranged'||skill.type==='magic');
+  if(tt(def.x,def.y).cover && ranged) acc-=15;       // cover vs ranged
+  if(ranged && tt(att.x,att.y).high) acc+=10;        // high ground ranged
+  if(ranged && (inSmoke(att.x,att.y)||inSmoke(def.x,def.y))) acc-=20; // smoke
+  if(def.statuses.Exposed) acc+=15;
+  if(att.statuses && att.statuses.Inspired) acc+=10; // Guiding Glow / Inspired helps the attacker
+  if(att.statuses && att.statuses.Guided) acc+=5;    // lantern light ACC
+  return Math.max(20,Math.min(95,acc));
+}
+function calcDamage(att,def,skill){
+  const pw=skill.power||0;
+  let dmg;
+  if(skill.type==='magic'||skill.type==='firetile') dmg=pw+att.MAG-def.RES;
+  else dmg=pw+att.ATK-def.DEF;
+  // Duelist Rival Mark: +3 for the marking Duelist; Quick Cut extra handled via skill
+  if(def.statuses.Marked && att.cid==='duelist') dmg+=3;
+  if(skill.name==='Quick Cut' && def.statuses.Marked) dmg+=2;
+  // Bowman conditional bonuses
+  if(skill.name==='Aimed Shot' && !att._moved) dmg+=2;
+  if(skill.name==='High Shot' && tt(att.x,att.y).high) dmg+=3;
+  // Ember: +2 vs Burned
+  if(att.cid==='ember' && def.statuses.Burn) dmg+=2;
+  // damage reductions
+  if(def.statuses.Guarded) dmg=Math.round(dmg*0.7);
+  if(def._guardedBy) dmg=Math.round(dmg*0.7);
+  return Math.max(1,dmg);
+}
+
+// ---- Reactions (Classic Mode) ----
+function tryReaction(def,att,rawDmg,skill){
+  if(def.hp<=0||def.rp<=0) return {dmg:rawDmg};
+  if(def.statuses.Rooted||def.statuses.Slow && false) {}
+  const reactable=(skill.type==='melee'||skill.type==='ranged'||skill.type==='magic'||skill.type==='firetile');
+  if(!reactable) return {dmg:rawDmg};
+  let r=Math.random()*100;
+  if(def.react==='block'){
+    if(r<25){ def.rp--; return {dmg:Math.round(rawDmg*0.6),tag:'BLOCK'};}  // -40%
+  }else if(def.react==='parry'){
+    let dodge=20, parry=15; if(def.statuses.Riposte){dodge+=10;parry+=10;}
+    if(skill.type==='melee'){
+      if(r<dodge){def.rp--;return{dmg:0,tag:'DODGE'};}
+      if(r<dodge+parry){def.rp--;return{dmg:Math.round(rawDmg*0.5),tag:'PARRY'};}
+    }
+  }else if(def.react==='lightguard'){
+    if((skill.type==='magic'||skill.type==='firetile') && r<20){def.rp--;return{dmg:Math.round(rawDmg*0.7),tag:'WARD'};} // -30% magic
+  }else if(def.react==='quickstep'){
+    // Courier: 20% vs physical (melee/ranged), reduce 25% and hop away
+    if((skill.type==='melee'||skill.type==='ranged') && r<20){def.rp--; quickstepMove(def,att); return{dmg:Math.round(rawDmg*0.75),tag:'STEP'};}
+  }else if(def.react==='cinder'){
+    // Ember: 15% vs melee -> attacker's tile becomes fire (no immediate dmg)
+    if(skill.type==='melee' && r<15){def.rp--; if(!(tt(att.x,att.y).fire)) fireExtra.add(att.x+','+att.y); return{dmg:rawDmg,tag:'CINDER'};}
+  }else if(def.react==='snap'){
+    // Bowman: reactive shot handled on enemy movement, not here
+  }
+  return {dmg:rawDmg};
+}
+
+// Courier quickstep: hop 1 tile away from attacker if a valid tile exists
+function quickstepMove(def,att){
+  const dx=Math.sign(def.x-att.x), dy=Math.sign(def.y-att.y);
+  const cands=[[def.x+dx,def.y+dy],[def.x+dx,def.y],[def.x,def.y+dy]];
+  for(const [nx,ny] of cands){
+    if(inB(nx,ny)&&passable(nx,ny)&&!uAt(nx,ny)&&!tt(nx,ny).fire){ def.x=nx;def.y=ny;def.px=nx;def.py=ny; return; }
+  }
+}
+
+// ================= game state =================
+let order=[], oi=-1, active=null, round=1, mode='idle', busy=false;
+let hiMove=new Set(), hiTarget=new Set(), selSkill=null;
+let projectiles=[], pops=[], shakeT=0, shakeMag=0, hoverTile=null;
+let lanternTiles=new Set(), fireExtra=new Set();
+let lanterns=[]; // {x,y,radius,life} — area light with strongest effect on center square
+let smokeTiles=new Set(); // "x,y:roundsLeft"
+let moveUndo=null;   // {u,x,y,face} snapshot for move-only undo
+// ---- Debug / playtest cheats ----
+const DBG={infMove:false, infActions:false, infHP:false, infMP:false};
+function dbgApplyContinuous(){
+  // infinite HP: keep player units topped up
+  if(DBG.infHP){ for(const u of units){ if(!u.foe && u.hp>0) u.hp=u.max; } }
+}
+function dbgAfterAction(u){
+  // infinite actions: never consume move/main action for players
+  if(DBG.infActions && u && !u.foe){ u._moved=false; u._attacked=false; }
+}
+function reviveUnit(u){
+  if(u.hp>0)return; u.hp=Math.round(u.max*0.5); u.anim='idle'; u.aframe=0; u.flash=0; u.statuses={};
+  if(!order.includes(u)) buildOrder();
+  pops.push(pop(u,'REVIVED','#8ff07a'));
+}
+function killUnit(u){
+  if(u.hp<=0)return; u.hp=0; u.flash=0; u.anim='idle';
+  pops.push(pop(u,'✖','#ff6a5a'));
+  if(checkEnd())return;
+  if(u===active && !busy){ // don't leave a dead unit holding the turn
+    actEl.innerHTML=''; setTimeout(()=>{ if(!busy) nextTurn(); },300);
+  }
+}
+const infoEl=document.getElementById('info'), actEl=document.getElementById('actions'),
+      tlEl=document.getElementById('timeline'), roundEl=document.getElementById('round');
+
+// sprite imgs
+const IMG={}, CELL=SPR.cell, ANIM=SPR.anim; let loaded=0;
+for(const cid in SPR.img){const im=new Image();im.onload=()=>{if(++loaded===Object.keys(SPR.img).length)start();};im.src=SPR.img[cid];IMG[cid]=im;}
+
+// ---- movement (rough ground none in v0.1; blocked impassable) ----
+function effMove(u){ let m=(DBG.infMove && !u.foe) ? 99 : u.MOVE; if(u._sprint) m+=3; if(u.statuses&&u.statuses.Hampered) m=Math.max(2,m-1); return m; }
+function reachable(u){
+  const res={},best={};best[u.x+','+u.y]=0;const q=[{x:u.x,y:u.y,c:0}];
+  const mv=effMove(u);
+  while(q.length){q.sort((a,b)=>a.c-b.c);const cur=q.shift();
+    for(const[dx,dy]of[[1,0],[-1,0],[0,1],[0,-1]]){const nx=cur.x+dx,ny=cur.y+dy;
+      if(!passable(nx,ny)||uAt(nx,ny))continue;
+      const c=cur.c+1; if(c>mv)continue; const k=nx+','+ny;
+      if(best[k]===undefined||c<best[k]){best[k]=c;res[k]={x:nx,y:ny};q.push({x:nx,y:ny,c});}}}
+  return Object.values(res);
+}
+function bfsPath(u,tx,ty){
+  const prev={},best={};best[u.x+','+u.y]=0;const q=[{x:u.x,y:u.y,c:0}];
+  const mv=effMove(u);
+  while(q.length){q.sort((a,b)=>a.c-b.c);const cur=q.shift();
+    for(const[dx,dy]of[[1,0],[-1,0],[0,1],[0,-1]]){const nx=cur.x+dx,ny=cur.y+dy;
+      if(!passable(nx,ny)||uAt(nx,ny))continue;const c=cur.c+1;if(c>mv)continue;const k=nx+','+ny;
+      if(best[k]===undefined||c<best[k]){best[k]=c;prev[k]=cur.x+','+cur.y;q.push({x:nx,y:ny,c});}}}
+  const path=[];let k=tx+','+ty;while(k&&k!==u.x+','+u.y){const[x,y]=k.split(',').map(Number);path.unshift({x,y});k=prev[k];}
+  return path;
+}
+
+// ================= UI =================
+function renderTimeline(){
+  tlEl.innerHTML=''; roundEl.textContent='Round '+round;
+  for(const u of order){const c=document.createElement('div');
+    c.className='tl-chip'+(u.foe?' foe':'')+(u===active?' active':'')+(u.hp<=0?' dead':'');
+    c.innerHTML=u.name.split(' ')[0]+(u.rp>0?' <span class="rp">◆</span>':'');
+    tlEl.appendChild(c);}
+}
+function renderActions(){
+  actEl.innerHTML='';
+  if(!active||active.foe||busy)return;
+  const mk=(label,fn,cls,dis)=>{const b=document.createElement('button');b.className='act '+(cls||'');b.textContent=label;b.disabled=!!dis;b.onclick=fn;actEl.appendChild(b);};
+  if(mode==='skillmenu'){
+    for(const s of active.skills){const sk=SK[s];
+      mk(s,()=>pickSkill(s), 'skill', false);}
+    mk('‹ Back',()=>{mode='idle';infoEl.innerHTML=actionPrompt();renderActions();},'ghost');
+    return;
+  }
+  if(mode==='target' && selSkill && selSkill!=='__basic'){
+    // targeting a command skill: show Back so the player can cancel after reading the tooltip
+    mk('‹ Back',()=>{selSkill=null;hiTarget=new Set();mode='skillmenu';infoEl.innerHTML='<b>Skills</b> — choose a command.';renderActions();},'ghost');
+    mk('Wait',endUnitTurn,'hot');
+    return;
+  }
+  const canUndo = moveUndo && moveUndo.u===active && active._moved && !active._attacked;
+  if(canUndo) mk('↺ Undo Move',undoMove,'ghost');
+  mk('Move',enterMove,'',active._moved);
+  mk('Attack',()=>{selSkill='__basic';enterTarget();},'',active._attacked);
+  mk('Skill',()=>{mode='skillmenu';infoEl.innerHTML='<b>Skills</b> — choose a command.';renderActions();},'',active._attacked);
+  mk('Wait',endUnitTurn,'hot');
+}
+function actionPrompt(){return `<b>${active.name}</b> · HP ${active.hp}/${active.max} · RP ${active.rp} · Round ${round}. Move, Attack, Skill, or Wait.`;}
+// which skills may target the caster's own tile
+function canSelfTarget(name){
+  const sk=SK[name]; if(!sk)return false;
+  if(sk.type==='self') return true;                       // Brace, Intercept, Riposte, Overwatch stances
+  if(name==='Warm Light'||name==='Guiding Glow') return true; // Lanternist self-heal/buff
+  if(name==='Place Lantern') return true;                 // lantern on own tile
+  return false;
+}
+function pickSkill(name){
+  selSkill=name; const sk=SK[name];
+  // ALWAYS require a confirm tap so the tooltip stays readable — no auto-cast.
+  mode='target'; buildTargets(name);
+  const selfNote = canSelfTarget(name) ? (sk.type==='self'?` Tap ${active.name} to confirm.`:` Tap an ally or ${active.name} (self).`) : '';
+  infoEl.innerHTML=`<b>${name}</b> — ${sk.desc}${selfNote}`;
+  renderActions();
+}
+function enterMove(){
+  if(active._moved||busy)return; mode='move'; hiTarget.clear(); hiMove=new Set();
+  reachable(active).forEach(m=>hiMove.add(m.x+','+m.y));
+  infoEl.innerHTML=`<b>Move</b> — tap a blue tile (range ${active.MOVE}).`; renderActions();
+}
+function enterTarget(){ mode='target'; buildTargets('__basic'); 
+  const n=[...hiTarget].filter(k=>{const[x,y]=k.split(',').map(Number);const e=uAt(x,y);return e&&e.foe;}).length;
+  infoEl.innerHTML=`<b>Attack</b> — tap an enemy in range${n?` (${n})`:' — none in range'}.`; renderActions();
+}
+function buildTargets(skillName){
+  hiMove=new Set(); hiTarget=new Set();
+  if(skillName==='__basic'){
+    const rng=basicRange(active), minr=basicMinRange(active);
+    for(let y=0;y<N;y++)for(let x=0;x<N;x++){const d=Math.abs(x-active.x)+Math.abs(y-active.y);
+      if(d>=minr&&d<=rng) hiTarget.add(x+','+y);}
+    return;
+  }
+  const sk=SK[skillName]; const rng=sk.range||0; const minr=sk.minr||1;
+  // self-only stance skills: only the caster's own tile is a valid confirm target
+  if(sk.type==='self'){ hiTarget.add(active.x+','+active.y); return; }
+  for(let y=0;y<N;y++)for(let x=0;x<N;x++){
+    const d=Math.abs(x-active.x)+Math.abs(y-active.y);
+    if(d>=minr&&d<=rng) hiTarget.add(x+','+y);
+  }
+  // add own tile if this skill may target self
+  if(canSelfTarget(skillName)) hiTarget.add(active.x+','+active.y);
+}
+function basicRange(u){ // melee 1, ranged jobs 3+
+  if(u.cid==='bowman') return 5;                 // bow reaches far (min-range handled in targeting)
+  if(u.cid==='archer'||u.cid==='spark'||u.cid==='ember') return 3;
+  if(u.cid==='lanternist') return 1;
+  return 1; // warder, duelist, raider, courier melee
+}
+function basicMinRange(u){ return u.cid==='bowman'?2:1; } // bow can't hit adjacent
+
+// ================= input =================
+function scrToTile(sx,sy){let best=null;
+  for(let y=0;y<N;y++)for(let x=0;x<N;x++){const lift=tt(x,y).high?HG_LIFT:0;const p=iso(x,y,lift);
+    const dx=Math.abs(sx-p.x)/(TW/2*cam.z),dy=Math.abs(sy-p.y)/(TH/2*cam.z);
+    if(dx+dy<=1){if(!best)best={x,y};}}
+  return best;}
+function cpos(ev){const r=cv.getBoundingClientRect();const t=ev.touches?ev.touches[0]:ev;return{x:(t.clientX-r.left)*(VW/r.width),y:(t.clientY-r.top)*(VH/r.height)};}
+function rawXY(t){const r=cv.getBoundingClientRect();return{x:(t.clientX-r.left)*(VW/r.width),y:(t.clientY-r.top)*(VH/r.height)};}
+function clampZoom(){cam.z=Math.max(cam.min,Math.min(cam.max,cam.z));}
+function zoomAt(sx,sy,factor){
+  // keep the point under the cursor stable while zooming
+  const before={x:(sx-VW/2-cam.x)/cam.z, y:(sy-VH/2-cam.y)/cam.z};
+  cam.z*=factor; clampZoom();
+  cam.x=sx-VW/2-before.x*cam.z; cam.y=sy-VH/2-before.y*cam.z;
+}
+cv.addEventListener('mousemove',e=>{const p=cpos(e);hoverTile=scrToTile(p.x,p.y);});
+cv.addEventListener('mouseleave',()=>hoverTile=null);
+// wheel zoom (desktop)
+cv.addEventListener('wheel',e=>{e.preventDefault();const p=cpos(e);zoomAt(p.x,p.y, e.deltaY<0?1.12:0.89);},{passive:false});
+
+// --- touch: 1 finger = tap/pan, 2 fingers = pinch-zoom ---
+let touchState=null;
+function tdist(a,b){const dx=a.clientX-b.clientX,dy=a.clientY-b.clientY;return Math.hypot(dx,dy);}
+function tmid(a,b){return{clientX:(a.clientX+b.clientX)/2,clientY:(a.clientY+b.clientY)/2};}
+cv.addEventListener('touchstart',e=>{
+  e.preventDefault();
+  if(e.touches.length===1){
+    const p=rawXY(e.touches[0]);
+    touchState={mode:'tap',sx:p.x,sy:p.y,ox:p.x,oy:p.y,moved:false,camx:cam.x,camy:cam.y};
+  }else if(e.touches.length===2){
+    touchState={mode:'pinch',d0:tdist(e.touches[0],e.touches[1]),z0:cam.z};
+  }
+},{passive:false});
+cv.addEventListener('touchmove',e=>{
+  e.preventDefault(); if(!touchState)return;
+  if(touchState.mode==='pinch'&&e.touches.length===2){
+    const d=tdist(e.touches[0],e.touches[1]);
+    const m=rawXY(tmid(e.touches[0],e.touches[1]));
+    const targetZ=touchState.z0*(d/touchState.d0);
+    const factor=targetZ/cam.z; zoomAt(m.x,m.y,factor);
+  }else if(touchState.mode==='tap'&&e.touches.length===1){
+    const p=rawXY(e.touches[0]);
+    if(Math.hypot(p.x-touchState.ox,p.y-touchState.oy)>10){
+      touchState.moved=true; // becomes a pan
+      cam.x=touchState.camx+(p.x-touchState.ox);
+      cam.y=touchState.camy+(p.y-touchState.oy);
+    }
+  }
+},{passive:false});
+cv.addEventListener('touchend',e=>{
+  e.preventDefault();
+  if(touchState&&touchState.mode==='tap'&&!touchState.moved){
+    handleSelect(touchState.sx,touchState.sy);
+  }
+  touchState=null;
+},{passive:false});
+
+// mouse click (desktop select)
+cv.addEventListener('click',e=>{const p=cpos(e);handleSelect(p.x,p.y);});
+
+function handleSelect(sx,sy){
+  if(busy||!active||active.foe)return;
+  const t=scrToTile(sx,sy); if(!t)return; const k=t.x+','+t.y;
+  if(mode==='move'&&hiMove.has(k)){ doMove(active,t.x,t.y); return;}
+  if(mode==='target'&&hiTarget.has(k)){ resolveTargeted(t.x,t.y); return; }
+}
+// zoom buttons + reset (wired from HTML)
+window.zoomIn =()=>{zoomAt(VW/2,VH/2,1.2);};
+window.zoomOut=()=>{zoomAt(VW/2,VH/2,0.83);};
+window.zoomReset=()=>{cam.z=1;cam.x=0;cam.y=0;};
+
+// ---- debug panel wiring ----
+window.dbgToggle=(flag,el)=>{
+  DBG[flag]=!DBG[flag];
+  if(el) el.classList.toggle('on',DBG[flag]);
+  // reflect immediately: if infActions turned on mid-turn, re-enable buttons
+  if(flag==='infActions'&&DBG.infActions&&active&&!active.foe){active._moved=false;active._attacked=false;}
+  if(flag==='infMP'&&DBG.infMP&&active&&!active.foe){active.rp=99;}
+  if(active&&!active.foe&&!busy){ renderActions(); }
+};
+window.dbgKill=(idx)=>{ const u=units.filter(z=>!z.foe)[idx]; if(u) killUnit(u); };
+window.dbgRevive=(idx)=>{ const u=units.filter(z=>!z.foe)[idx]; if(u) reviveUnit(u); if(!busy&&active&&!active.foe) renderActions(); };
+window.dbgKillEnemies=()=>{ for(const u of alive(true)) u.hp=0; checkEnd(); };
+window.dbgFullHeal=()=>{ for(const u of units){ if(!u.foe&&u.hp>0) u.hp=u.max; } };
+window.dbgPlayerNames=()=>units.filter(z=>!z.foe).map(z=>z.name);
+
+// ================= resolve a targeted action =================
+function resolveTargeted(x,y){
+  const isSelfTile = (x===active.x && y===active.y);
+  let sk;
+  if(selSkill==='__basic'){
+    const r=basicRange(active);
+    const type = r>1 ? ((active.cid==='spark'||active.cid==='ember')?'magic':'ranged') : 'melee';
+    sk={type,power:0,acc:85,range:r,minr:basicMinRange(active)};
+  } else { sk=Object.assign({name:selSkill}, SK[selSkill]); }
+  // self-type stance skills: confirm by tapping the caster
+  if(sk.type==='self'){ if(isSelfTile) castSelf(active,selSkill); else fizzle(); return; }
+  const tgt=uAt(x,y);
+  if(sk.type==='heal'){
+    const ally = isSelfTile ? active : tgt;
+    if(ally&&!ally.foe) castHeal(active,ally,sk); else fizzle(); return;
+  }
+  if(sk.type==='support'){ // Guard Ally — cannot target self
+    if(tgt&&!tgt.foe&&tgt!==active) castGuardAlly(active,tgt); else fizzle(); return;
+  }
+  if(sk.type==='buff'){
+    const ally = isSelfTile ? active : tgt;
+    if(ally&&!ally.foe) castBuff(active,ally,sk); else fizzle(); return;
+  }
+  if(sk.type==='zone'){ castLantern(active,x,y); return; }          // lantern (may be own tile)
+  if(sk.type==='zonefire'){ castEmberTile(active,x,y); return; }    // Ember Tile
+  if(sk.type==='zonesmoke'){ castSmoke(active,x,y); return; }       // Smoke Chant
+  if(sk.type==='reveal'){ castReveal(active,x,y); return; }         // Reveal (clears smoke)
+  if(sk.type==='drag'){ if(tgt&&!tgt.foe&&tgt!==active) castDrag(active,tgt); else fizzle(); return; }
+  // offensive
+  if(!tgt||!tgt.foe){ fizzle(); return; }
+  doAttack(active,tgt,sk);
+}
+function fizzle(){ infoEl.innerHTML='Invalid target. Tap a highlighted tile, or ‹ Back.'; }
+
+// ================= self / support casts =================
+function castSelf(u,name){
+  const sk=SK[name]; busy=true; mode='idle'; actEl.innerHTML='';
+  if(name==='Sprint'){
+    // grant +3 MOVE this turn; cannot attack; does not consume main action
+    u._sprint=true; u._moved=false; u._attacked=true; // attacked=true disables Attack/Skill offense
+    u.statuses.Sprint=1;
+    pops.push(pop(u,'SPRINT +3','#8ff0a0'));
+    infoEl.innerHTML=`<b>${u.name}</b> sprints (+3 MOVE, no attack this turn).`;
+    setTimeout(()=>{busy=false; mode='idle'; renderActions();},350);
+    return;
+  }
+  if(sk.selfstatus) u.statuses[sk.selfstatus]=2;
+  pops.push(pop(u,name,'#e8c766'));
+  u._attacked=true;
+  infoEl.innerHTML=`<b>${u.name}</b> uses ${name}.`;
+  setTimeout(()=>{busy=false; afterAct(u);},400);
+}
+function castGuardAlly(u,ally){
+  busy=true;mode='idle';actEl.innerHTML='';
+  ally._guardedBy=u.id; ally.statuses.Guarded=2;
+  pops.push(pop(ally,'GUARDED','#8fd0ff'));
+  u._attacked=true; infoEl.innerHTML=`<b>${u.name}</b> guards ${ally.name}.`;
+  setTimeout(()=>{busy=false;afterAct(u);},400);
+}
+function castHeal(u,ally,sk){
+  busy=true;mode='idle';actEl.innerHTML='';
+  sk=sk||SK[selSkill];
+  let amt;
+  if(sk.flatHeal){ amt=sk.power||12; }                        // Courier Quick Item: flat tonic
+  else {
+    amt=(sk.power||0)+u.MAG;
+    if(lanternEffectAt(ally.x,ally.y)) amt+=3;                 // +3 in lantern light
+    if(dist(u,ally)===1) amt+=2;                               // Warm Presence
+  }
+  ally.hp=Math.min(ally.max,ally.hp+amt);
+  pops.push(pop(ally,'+'+amt,'#8ff07a'));
+  u._attacked=true; infoEl.innerHTML=`<b>${u.name}</b> heals ${ally===u?'itself':ally.name} for ${amt}.`;
+  setTimeout(()=>{busy=false;afterAct(u);},400);
+}
+function castEmberTile(u,x,y){
+  const T=tt(x,y); if(T.blocked){ fizzle(); return; }
+  busy=true;mode='idle';actEl.innerHTML='';
+  fireExtra.add(x+','+y);
+  const en=uAt(x,y);
+  if(en){ en.hp=Math.max(0,en.hp-3); en.statuses.Burn=2; pops.push(pop(en,'-3🔥','#ff9a4a')); }
+  else pops.push({x,y,txt:'🔥 FIRE',c:'#ff9a4a',t:0,lift:T.high?HG_LIFT:0});
+  u._attacked=true; infoEl.innerHTML=`<b>${u.name}</b> ignites a tile.`;
+  setTimeout(()=>{busy=false;afterAct(u);},400);
+}
+let smokeTiles2unused=0;
+function castSmoke(u,x,y){
+  busy=true;mode='idle';actEl.innerHTML='';
+  for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){const nx=x+dx,ny=y+dy;
+    if(inB(nx,ny)&&Math.abs(dx)+Math.abs(dy)<=1) smokeTiles.add(nx+','+ny+':2');}
+  pops.push({x,y,txt:'≈ SMOKE',c:'#c8c8d0',t:0,lift:tt(x,y).high?HG_LIFT:0});
+  u._attacked=true; infoEl.innerHTML=`<b>${u.name}</b> conjures smoke.`;
+  setTimeout(()=>{busy=false;afterAct(u);},400);
+}
+function inSmoke(x,y){ for(const s of smokeTiles){ const p=s.split(':'); if(p[0]===x+','+y) return true; } return false; }
+function castReveal(u,x,y){
+  busy=true;mode='idle';actEl.innerHTML='';
+  let cleared=0;
+  for(const s of [...smokeTiles]){ const p=s.split(':'); const c=p[0].split(',').map(Number);
+    if(Math.abs(c[0]-x)+Math.abs(c[1]-y)<=2){ smokeTiles.delete(s); cleared++; } }
+  for(const e of alive(true)){ if(Math.abs(e.x-x)+Math.abs(e.y-y)<=2) e.statuses.Exposed=2; }
+  pops.push({x,y,txt:cleared?'REVEALED':'REVEAL',c:'#ffe08a',t:0,lift:tt(x,y).high?HG_LIFT:0});
+  u._attacked=true; infoEl.innerHTML=`<b>${u.name}</b> reveals the area${cleared?' (smoke cleared)':''}.`;
+  setTimeout(()=>{busy=false;afterAct(u);},400);
+}
+function castDrag(u,ally){
+  busy=true;mode='idle';actEl.innerHTML='';
+  // find a free tile adjacent to Courier to pull ally into
+  for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+    const nx=u.x+dx,ny=u.y+dy;
+    if(inB(nx,ny)&&passable(nx,ny)&&!uAt(nx,ny)&&!tt(nx,ny).fire){ ally.x=nx;ally.y=ny;ally.px=nx;ally.py=ny; break; }
+  }
+  pops.push(pop(ally,'DRAGGED','#8fd0ff'));
+  u._attacked=true; infoEl.innerHTML=`<b>${u.name}</b> pulls ${ally.name} to safety.`;
+  setTimeout(()=>{busy=false;afterAct(u);},400);
+}
+function castBuff(u,ally,sk){
+  busy=true;mode='idle';actEl.innerHTML='';
+  if(sk.status) ally.statuses[sk.status]=2;
+  pops.push(pop(ally,sk.status||'BUFF','#e8c766'));
+  u._attacked=true; infoEl.innerHTML=`<b>${u.name}</b> aids ${ally.name}.`;
+  setTimeout(()=>{busy=false;afterAct(u);},400);
+}
+function castLantern(u,x,y){
+  // valid-tile guard: not blocked/fire/objective
+  const T=tt(x,y);
+  if(T.blocked||T.fire){ fizzle(); return; }
+  busy=true;mode='idle';actEl.innerHTML='';
+  // one lantern per Lanternist: remove any this caster owns
+  lanterns=lanterns.filter(l=>l.owner!==u.id);
+  const lan={x,y,radius:2,life:3,owner:u.id};
+  lanterns.push(lan);
+  rebuildLanternTiles();
+  pops.push({x,y,txt:'✦ LANTERN',c:'#ffe08a',t:0,lift:T.high?HG_LIFT:0});
+  u._attacked=true; infoEl.innerHTML=`<b>${u.name}</b> places a lantern (radius 2; center square strongest).`;
+  setTimeout(()=>{busy=false;afterAct(u);},400);
+}
+function rebuildLanternTiles(){
+  lanternTiles=new Set();
+  for(const l of lanterns){
+    for(let dy=-l.radius;dy<=l.radius;dy++)for(let dx=-l.radius;dx<=l.radius;dx++){
+      if(Math.abs(dx)+Math.abs(dy)>l.radius)continue;
+      const nx=l.x+dx,ny=l.y+dy; if(!inB(nx,ny))continue;
+      lanternTiles.add(nx+','+ny);
+    }
+  }
+}
+// returns 'center' | 'aura' | null for a unit's tile
+function lanternEffectAt(x,y){
+  let best=null;
+  for(const l of lanterns){
+    if(x===l.x&&y===l.y) return 'center';
+    if(Math.abs(x-l.x)+Math.abs(y-l.y)<=l.radius) best='aura';
+  }
+  return best;
+}
+
+// ================= movement =================
+function doMove(u,tx,ty){
+  busy=true;mode='idle';hiMove=new Set();actEl.innerHTML='';
+  // snapshot for move-undo (players only, and only if they haven't acted)
+  if(!u.foe) moveUndo={u, x:u.x, y:u.y, face:u.face};
+  const path=bfsPath(u,tx,ty);let i=0;
+  (function step(){
+    if(i>=path.length){u.px=u.x;u.py=u.y;u._moved=true;busy=false;
+      // fire tile damage on stop — if it fired, the move is no longer undoable
+      const onFire = tt(u.x,u.y).fire || fireExtra.has(u.x+','+u.y);
+      tickFireUnder(u);
+      if(onFire) moveUndo=null;   // consequence dealt; don't allow rewind
+      infoEl.innerHTML=`<b>${u.name}</b> moved.`; afterAct(u); return;}
+    const nx=path[i]; if(nx.x!==u.x)u.face=nx.x>u.x?1:-1;
+    tween(u,nx.x,nx.y,()=>{u.x=nx.x;u.y=nx.y;i++;step();});
+  })();
+}
+function undoMove(){
+  if(busy||!moveUndo||!active||active.foe)return;
+  const s=moveUndo; const u=s.u;
+  if(u!==active||!u._moved||u._attacked)return; // only current unit, move not yet committed by an action
+  u.x=s.x; u.y=s.y; u.px=s.x; u.py=s.y; u.face=s.face; u._moved=false;
+  moveUndo=null; mode='idle';
+  infoEl.innerHTML=`Move undone. <b>${u.name}</b> — choose an action.`;
+  renderActions();
+}
+function tween(u,tx,ty,done){const sx=u.px,sy=u.py,t0=performance.now(),dur=150;
+  (function fr(now){let k=(now-t0)/dur;if(k>1)k=1;const e=k<.5?2*k*k:1-Math.pow(-2*k+2,2)/2;
+    u.px=sx+(tx-sx)*e;u.py=sy+(ty-sy)*e;u.hop=Math.sin(k*Math.PI)*3;
+    if(k<1)requestAnimationFrame(fr);else{u.hop=0;done();}})(performance.now());}
+
+// ================= attack =================
+function doAttack(att,def,sk){
+  busy=true;mode='idle';hiTarget=new Set();actEl.innerHTML='';
+  att.face=def.x>att.x?1:(def.x<att.x?-1:att.face);
+  att.anim='attack';att.aframe=0;
+  const ranged=(sk.type==='ranged'||sk.type==='magic'||sk.type==='firetile');
+  const total=340,t0=performance.now();let fired=false;
+  (function fr(now){const k=(now-t0)/total;att.aframe=Math.min(ANIM.attack.length-1,Math.floor(k*ANIM.attack.length));
+    if(!fired&&k>=0.55){fired=true;
+      if(ranged) spawnProj(att,def,sk); else landHit(att,def,sk);}
+    if(k<1)requestAnimationFrame(fr);else{att.anim='idle';att.aframe=0; if(!ranged) finishAtk(att,def,sk);}
+  })(t0);
+}
+function spawnProj(att,def,sk){const a=iso(att.px,att.py,tt(att.x,att.y).high?HG_LIFT:0),b=iso(def.px,def.py,tt(def.x,def.y).high?HG_LIFT:0);
+  projectiles.push({x:a.x,y:a.y-16,tx:b.x,ty:b.y-16,t:0,kind:att.proj||'arrow',onHit:()=>{landHit(att,def,sk);finishAtk(att,def,sk);}});}
+function landHit(att,def,sk){
+  const hc=hitChance(att,def,sk); const roll=Math.random()*100;
+  if(roll>=hc){ pops.push(pop(def,'MISS','#e8e0c8')); def._lastMiss=true; return; }
+  let dmg=calcDamage(att,def,sk);
+  // reaction
+  const rr=tryReaction(def,att,dmg,sk); dmg=rr.dmg;
+  if(rr.tag) pops.push(pop(def,rr.tag,'#8fd0ff'));
+  if(dmg>0){ def.hp=Math.max(0,def.hp-dmg); def.flash=1;def.anim='hurt';def.hurtT=performance.now();
+    shakeT=1;shakeMag=dmg>10?6:4; pops.push(pop(def,'-'+dmg,'#fff')); }
+  else if(!rr.tag){ pops.push(pop(def,'0','#ccc')); }
+  // apply status from skill
+  if(sk.status && def.hp>0 && Math.random()<0.9) def.statuses[sk.status]=2;
+  if(sk.type==='firetile'){ fireExtra.add(def.x+','+def.y); }
+  def._lastMiss=false;
+}
+function finishAtk(att,def,sk){
+  att._attacked=true;
+  setTimeout(()=>{
+    if(def.hp<=0) pops.push(pop(def,def.name.split(' ')[0]+' down!','#ffcf6b'));
+    if(checkEnd()){busy=false;return;}
+    busy=false;
+    infoEl.innerHTML = att.foe
+      ? `<b>${att.name}</b> ${def._lastMiss?'missed':'hit '+def.name}.`
+      : `<b>${att.name}</b> ${def._lastMiss?'missed '+def.name:'struck '+def.name}.`;
+    if(att.foe) setTimeout(enemyContinue,300);
+    else afterAct(att);
+  }, def.hp<=0?250:150);
+}
+
+// ================= after a player action =================
+function afterAct(u){
+  if(u.foe)return;
+  dbgAfterAction(u);
+  if(u._moved&&u._attacked){ setTimeout(endUnitTurn,300); }
+  else { mode='idle'; infoEl.innerHTML=actionPrompt(); renderActions(); }
+}
+function endUnitTurn(){ if(busy)return; mode='idle'; selSkill=null; nextTurn(); }
+
+// ================= turn order =================
+function buildOrder(){ order=[...units].filter(u=>u.hp>0).sort((a,b)=>b.SPD-a.SPD); }
+function startRound(){
+  round++; roundEl.textContent='Round '+round;
+  // reset RP
+  for(const u of units){ if(u.hp>0){ u.rp=1; } }
+  // lantern lifespan (3 rounds)
+  if(lanterns.length){
+    for(const l of lanterns) l.life--;
+    lanterns=lanterns.filter(l=>l.life>0);
+    rebuildLanternTiles();
+  }
+  // smoke lifespan (stored as "x,y:rounds")
+  if(smokeTiles.size){
+    const next=new Set();
+    for(const s of smokeTiles){ const p=s.split(':'); const r=parseInt(p[1])-1; if(r>0) next.add(p[0]+':'+r); }
+    smokeTiles=next;
+  }
+}
+function nextTurn(){
+  if(checkEnd())return;
+  // recompute order each turn start to respect Slow/Wait bonuses (simplified: static + wrap)
+  let g=0;
+  if(oi===-1){ buildOrder(); }
+  do{ oi++;
+    if(oi>=order.length){ oi=0; buildOrder(); startRound(); }
+    g++;
+  }while(order[oi] && order[oi].hp<=0 && g<60);
+  active=order[oi];
+  if(!active){return;}
+  active._moved=false; active._attacked=false; active._sprint=false; mode='idle'; selSkill=null; moveUndo=null;
+  // start-of-turn effects
+  startOfTurn(active);
+  if(active.hp<=0){ return nextTurn(); }
+  hiMove=new Set(); hiTarget=new Set();
+  if(active.foe){ infoEl.innerHTML=`<b>${active.name}</b> (enemy) acts…`; actEl.innerHTML=''; setTimeout(enemyTurn,600); }
+  else { infoEl.innerHTML=actionPrompt(); renderActions(); }
+}
+function startOfTurn(u){
+  // Burn / fire tile damage (skipped for players under infinite-HP so they can park in fire)
+  if(!(DBG.infHP && !u.foe)) tickFireUnder(u);
+  // infinite "mana": keep player reaction points topped
+  if(DBG.infMP && !u.foe && u.hp>0) u.rp=99;
+  // Lantern aura: allies heal at start of their turn (center square = stronger)
+  if(u.hp>0 && !u.foe){
+    const eff=lanternEffectAt(u.x,u.y);
+    if(eff){ const h=eff==='center'?5:3; u.hp=Math.min(u.max,u.hp+h);
+      pops.push(pop(u,'+'+h+'✦','#ffe08a'));
+      u.statuses.Guided = Math.max(u.statuses.Guided||0, 2); // +ACC while lit
+    }
+  }
+  // decay statuses
+  for(const s in u.statuses){ u.statuses[s]--; if(u.statuses[s]<=0) delete u.statuses[s]; }
+  if(!u.statuses.Guarded) u._guardedBy=null;
+}
+function tickFireUnder(u){
+  if(u.hp<=0)return;
+  const onFire = tt(u.x,u.y).fire || fireExtra.has(u.x+','+u.y) ;
+  if(onFire){ const d=3; u.hp=Math.max(0,u.hp-d); pops.push(pop(u,'-'+d+'🔥','#ff9a4a')); if(u.hp<=0){pops.push(pop(u,u.name.split(' ')[0]+' down!','#ffcf6b'));} }
+}
+
+// ================= enemy AI =================
+function enemyTurn(){
+  if(checkEnd())return; const foe=active;
+  const targets=alive(false).sort((a,b)=>a.hp-b.hp||dist(foe,a)-dist(foe,b));
+  if(!targets.length)return;
+  const tgt=targets[0];
+  const rng=basicRange(foe);
+  if(dist(foe,tgt)<=rng){ foeAttack(foe,tgt); return; }
+  // move toward
+  const spots=reachable(foe); let best=null;
+  for(const s of spots){ const d=Math.abs(s.x-tgt.x)+Math.abs(s.y-tgt.y);
+    const canHit=d<=rng; const hi=tt(s.x,s.y).high?1:0; const fire=tt(s.x,s.y).fire?5:0;
+    const score=(canHit?0:100)+d*4 - hi*3 + fire; if(!best||score<best.score)best={...s,score}; }
+  if(best){ doMove(foe,best.x,best.y);
+    const iv=setInterval(()=>{ if(!busy){clearInterval(iv);
+      if(foe.hp<=0){return;} if(dist(foe,tgt)<=rng)foeAttack(foe,tgt);
+      else{infoEl.innerHTML=`<b>${foe.name}</b> advances.`;setTimeout(nextTurn,350);} }},50); }
+  else setTimeout(nextTurn,250);
+}
+function foeAttack(foe,tgt){
+  const sk={type:basicRange(foe)>1?(foe.cid==='spark'?'magic':'ranged'):'melee',power:foe.cid==='raider'?0:0,acc:85,range:basicRange(foe)};
+  doAttack(foe,tgt,sk);
+}
+function enemyContinue(){ if(checkEnd())return; nextTurn(); }
+
+// ================= end =================
+function checkEnd(){
+  if(!alive(true).length){end(true);return true;}
+  if(!alive(false).length){end(false);return true;}
+  return false;
+}
+function end(win){mode='over';busy=true;
+  document.getElementById('ov-t').textContent=win?'Victory':'Defeat';
+  document.getElementById('ov-p').textContent=win?`Enemies defeated in ${round} rounds.`:'Your party has fallen.';
+  document.getElementById('overlay').classList.add('show');}
+
+// ================= rendering =================
+function drawTile(x,y){
+  const T=tt(x,y),lift=(T.high?HG_LIFT:0)*cam.z,p=iso(x,y,T.high?HG_LIFT:0),hx=TW/2*cam.z,hy=TH/2*cam.z;
+  if(lift>0){ ctx.fillStyle=T.side;
+    ctx.beginPath();ctx.moveTo(p.x-hx,p.y);ctx.lineTo(p.x,p.y+hy);ctx.lineTo(p.x,p.y+hy+lift);ctx.lineTo(p.x-hx,p.y+lift);ctx.closePath();ctx.fill();
+    ctx.beginPath();ctx.moveTo(p.x+hx,p.y);ctx.lineTo(p.x,p.y+hy);ctx.lineTo(p.x,p.y+hy+lift);ctx.lineTo(p.x+hx,p.y+lift);ctx.closePath();ctx.fill();}
+  ctx.fillStyle=T.top; dia(p,hx,hy);
+  ctx.fillStyle=T.topSh;ctx.globalAlpha=.3;ctx.beginPath();ctx.moveTo(p.x,p.y-hy);ctx.lineTo(p.x+hx,p.y);ctx.lineTo(p.x,p.y+hy);ctx.closePath();ctx.fill();ctx.globalAlpha=1;
+  // terrain glyphs
+  ctx.fillStyle='rgba(0,0,0,.5)';ctx.font='9px Georgia';ctx.textAlign='center';
+  if(T.cover)ctx.fillText('▲',p.x,p.y+3);
+  if(T.high)ctx.fillText('△',p.x,p.y+3);
+  if(T.fire){ctx.fillStyle='rgba(255,220,120,.9)';ctx.fillText('🔥',p.x,p.y+4);}
+  if(T.blocked){ctx.fillStyle='rgba(0,0,0,.6)';ctx.fillText('✕',p.x,p.y+3);}
+  ctx.textAlign='left';
+  const k=x+','+y;
+  if(lanternTiles.has(k)){
+    const isCenter = lanterns.some(l=>l.x===x&&l.y===y);
+    ctx.fillStyle = isCenter ? 'rgba(255,220,120,.34)' : 'rgba(255,220,120,.14)';
+    dia(p,hx,hy);
+    ctx.strokeStyle = isCenter ? 'rgba(255,235,150,.95)' : 'rgba(255,220,120,.55)';
+    ctx.lineWidth = isCenter ? 2 : 1; diaStroke(p,hx,hy);
+    if(isCenter){ ctx.fillStyle='rgba(255,240,170,.95)'; ctx.font='11px Georgia'; ctx.textAlign='center'; ctx.fillText('✦',p.x,p.y+4); ctx.textAlign='left'; }
+  }
+  if(fireExtra.has(k)){ctx.fillStyle='rgba(255,90,40,.35)';dia(p,hx,hy);
+    ctx.fillStyle='rgba(255,200,120,.9)';ctx.font='10px Georgia';ctx.textAlign='center';ctx.fillText('🔥',p.x,p.y+4);ctx.textAlign='left';}
+  if(inSmoke(x,y)){ctx.fillStyle='rgba(200,200,210,.42)';dia(p,hx,hy);
+    ctx.fillStyle='rgba(230,230,240,.7)';ctx.font='11px Georgia';ctx.textAlign='center';ctx.fillText('≈',p.x,p.y+4);ctx.textAlign='left';}
+  if(hiMove.has(k)){ctx.fillStyle='rgba(90,170,255,.4)';dia(p,hx,hy);ctx.strokeStyle='rgba(150,210,255,.9)';ctx.lineWidth=1;diaStroke(p,hx,hy);}
+  if(hiTarget.has(k)){const e=uAt(x,y);const strong=e&&e.foe;ctx.fillStyle=strong?'rgba(255,70,50,.5)':'rgba(255,100,80,.22)';dia(p,hx,hy);}
+  if(hoverTile&&hoverTile.x===x&&hoverTile.y===y&&(mode==='move'||mode==='target')){ctx.strokeStyle='rgba(255,255,255,.9)';ctx.lineWidth=1.5;diaStroke(p,hx,hy);}
+}
+function dia(p,hx,hy){ctx.beginPath();ctx.moveTo(p.x,p.y-hy);ctx.lineTo(p.x+hx,p.y);ctx.lineTo(p.x,p.y+hy);ctx.lineTo(p.x-hx,p.y);ctx.closePath();ctx.fill();}
+function diaStroke(p,hx,hy){ctx.beginPath();ctx.moveTo(p.x,p.y-hy);ctx.lineTo(p.x+hx,p.y);ctx.lineTo(p.x,p.y+hy);ctx.lineTo(p.x-hx,p.y);ctx.closePath();ctx.stroke();}
+
+function frameIndex(u){const set=ANIM[u.anim]||ANIM.idle;
+  if(u.anim==='idle')return set[Math.floor(performance.now()/450)%set.length];
+  if(u.anim==='attack')return set[Math.min(set.length-1,u.aframe||0)];
+  return set[0];}
+function drawUnit(u){
+  if(u.hp<=0&&u.flash<=0)return;
+  const lift=tt(u.x,u.y).high?HG_LIFT:0,p=iso(u.px,u.py,lift),img=IMG[u.cid];
+  const dw=CELL*1.1*cam.z,dh=CELL*1.1*cam.z,sx=frameIndex(u)*CELL;
+  ctx.fillStyle='rgba(0,0,0,.3)';ctx.beginPath();ctx.ellipse(p.x,p.y+1,11*cam.z,5*cam.z,0,0,Math.PI*2);ctx.fill();
+  const yOff=-dh+TH/2*cam.z+(u.hop?-u.hop*cam.z:0);
+  ctx.save();ctx.translate(p.x,p.y);if(u.face===1)ctx.scale(-1,1);
+  ctx.drawImage(img,sx,0,CELL,CELL,-dw/2,yOff,dw,dh);
+  if(u.flash>0){ctx.globalCompositeOperation='source-atop';ctx.fillStyle=`rgba(255,255,255,${u.flash})`;ctx.fillRect(-dw/2,yOff,dw,dh);ctx.globalCompositeOperation='source-over';}
+  ctx.restore();
+  // hp bar
+  const bw=26*cam.z,bh=3*cam.z,bx=p.x-bw/2,by=p.y+yOff+dh-4*cam.z;
+  ctx.fillStyle='#000';ctx.fillRect(bx-1,by-1,bw+2,bh+2);
+  ctx.fillStyle=u.foe?'#c0402e':'#4f9a2a';ctx.fillRect(bx,by,bw*(u.hp/u.max),bh);
+  // status pips
+  let sxx=bx; const st=Object.keys(u.statuses);
+  for(const s of st){ctx.fillStyle=statusColor(s);ctx.fillRect(sxx,by-4,3,3);sxx+=4;}
+  // RP marker
+  if(u.rp>0){ctx.fillStyle='#e8c766';ctx.fillRect(bx+bw-2,by-4,3,3);}
+  if(u===active&&!u.foe){ctx.fillStyle='#e8c766';const ay=p.y+yOff-5+Math.sin(performance.now()/300)*2;
+    ctx.beginPath();ctx.moveTo(p.x,ay);ctx.lineTo(p.x-4,ay-6);ctx.lineTo(p.x+4,ay-6);ctx.closePath();ctx.fill();}
+}
+function statusColor(s){return{Burn:'#ff7a3a',Slow:'#7ab0ff',Guarded:'#8fd0ff',Marked:'#ff5a5a',Exposed:'#ffb040',Rooted:'#b08050',Guided:'#e8c766',Riposte:'#d8d0a0',Intercept:'#8fd0ff'}[s]||'#fff';}
+
+function pop(u,txt,c){return{x:u.px,y:u.py,txt,c,t:0,lift:tt(u.x,u.y).high?HG_LIFT:0};}
+function drawProj(){for(const pr of projectiles){const x=pr.x+(pr.tx-pr.x)*pr.t,arc=Math.sin(pr.t*Math.PI)*18,y=pr.y+(pr.ty-pr.y)*pr.t-arc;
+  if(pr.kind==='arrow'){ctx.strokeStyle='#e8d8a0';ctx.lineWidth=2;const a=Math.atan2(pr.ty-pr.y,pr.tx-pr.x);ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x-7*Math.cos(a),y-7*Math.sin(a));ctx.stroke();}
+  else{ctx.fillStyle='#e08cf0';ctx.beginPath();ctx.arc(x,y,4,0,Math.PI*2);ctx.fill();ctx.fillStyle='rgba(224,140,240,.4)';ctx.beginPath();ctx.arc(x,y,7,0,Math.PI*2);ctx.fill();}}}
+function drawPops(){for(const q of pops){const p=iso(q.x,q.y,q.lift||0);ctx.font='bold 13px Georgia';ctx.textAlign='center';ctx.globalAlpha=Math.max(0,1-q.t);
+  ctx.fillStyle='#000';ctx.fillText(q.txt,p.x+1,p.y-26-q.t*22+1);ctx.fillStyle=q.c;ctx.fillText(q.txt,p.x,p.y-26-q.t*22);ctx.globalAlpha=1;ctx.textAlign='left';}}
+
+function update(dt){
+  dbgApplyContinuous();
+  for(const u of units){if(u.flash>0)u.flash=Math.max(0,u.flash-dt*3);
+    if(u.anim==='hurt'&&performance.now()-(u.hurtT||0)>240)u.anim='idle';}
+  for(const pr of projectiles){pr.t+=dt*2.4;if(pr.t>=1&&!pr.done){pr.done=true;pr.onHit();}}
+  projectiles=projectiles.filter(pr=>pr.t<1.05);
+  for(const q of pops)q.t+=dt*0.85; pops=pops.filter(q=>q.t<1);
+  if(shakeT>0)shakeT=Math.max(0,shakeT-dt*4);}
+function render(){ctx.clearRect(0,0,VW,VH);
+  const g=ctx.createLinearGradient(0,0,0,VH);g.addColorStop(0,'#243038');g.addColorStop(.5,'#2b2822');g.addColorStop(1,'#17130f');
+  ctx.fillStyle=g;ctx.fillRect(0,0,VW,VH);
+  ctx.save();if(shakeT>0){const m=shakeMag*shakeT;ctx.translate((Math.random()-.5)*m,(Math.random()-.5)*m);}
+  for(let s=0;s<=(N-1)*2;s++)for(let x=0;x<N;x++){const y=s-x;if(y<0||y>=N)continue;drawTile(x,y);}
+  const dl=units.filter(u=>u.hp>0||u.flash>0).sort((a,b)=>(a.px+a.py)-(b.px+b.py));
+  for(const u of dl)drawUnit(u);
+  drawProj();drawPops();ctx.restore();renderTimeline();}
+let last=performance.now();
+function loop(now){const dt=Math.min(.05,(now-last)/1000);last=now;update(dt);render();requestAnimationFrame(loop);}
+
+function start(){ buildOrder(); oi=-1; round=0; requestAnimationFrame(loop); nextTurn(); }
+
+</script></body></html>
